@@ -1,0 +1,38 @@
+name: Generate Waste Map
+
+on:
+  push:
+    paths:
+      - 'nbg_waste_basket_map.py'
+      - 'waste_baskets_nbg.geojson'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install folium
+
+      - name: Generate HTML Map
+        run: python nbg_waste_basket_map.py
+
+      - name: Move map to public folder
+        run: |
+          mkdir -p public
+          mv nbg_wastebaskets_map.html public/index.html
+
+      - name: Upload artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: waste-map
+          path: public/index.html
