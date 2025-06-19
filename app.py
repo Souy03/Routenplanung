@@ -230,69 +230,211 @@ def create_forecast_rf(df):
 
     return forecasts
 
-def load_data_from_geojson(geojson_path):
+def generate_realistic_waste_basket_data(num_baskets=1500):
     """
-    Lädt Sensordaten basierend auf GeoJSON (falls verfügbar) oder erstellt Beispieldaten
+    Generiert realistische Waste Basket Daten für 1500 Behälter
+    Basierend auf dem Waste Basket Map Code mit erweiterter Logik
     """
-    try:
-        with open(geojson_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        
-        features = data.get("features", [])[:15]  # Maximal 15 Behälter
-        logger.info(f"GeoJSON geladen: {len(features)} Behälter gefunden")
-        
-    except FileNotFoundError:
-        logger.warning(f"GeoJSON-Datei nicht gefunden: {geojson_path}")
-        # Erstelle einfache Beispiel-IDs
-        features = [{"id": f"example_bin_{i}"} for i in range(1, 8)]
+    logger.info(f"Generiere Daten für {num_baskets} Waste Baskets...")
+    
+    # Nürnberger Koordinaten-Bereich (erweitert für mehr Behälter)
+    lat_min, lat_max = 49.35, 49.55  # Nürnberg und Umgebung
+    lon_min, lon_max = 10.95, 11.25
     
     start_date = datetime.now() - timedelta(days=2)
     data_rows = []
     
-    for i, feature in enumerate(features):
-        osm_id = feature.get("@id") or feature.get("id") or f"bin_{i}"
+    # Verschiedene Behältertypen mit unterschiedlichen Charakteristiken
+    basket_types = [
+        {"type": "park", "base_fill_rate": 1.2, "weight_factor": 0.4},
+        {"type": "street", "base_fill_rate": 1.8, "weight_factor": 0.5},
+        {"type": "plaza", "base_fill_rate": 2.5, "weight_factor": 0.6},
+        {"type": "residential", "base_fill_rate": 1.0, "weight_factor": 0.35},
+        {"type": "commercial", "base_fill_rate": 3.0, "weight_factor": 0.7}
+    ]
+    
+    for basket_id in range(1, num_baskets + 1):
+        # Zufällige Koordinaten im Nürnberger Bereich
+        lat = random.uniform(lat_min, lat_max)
+        lon = random.uniform(lon_min, lon_max)
         
-        # Realistische Füllstand-Entwicklung
-        current_fill = random.uniform(10, 35)
+        # Behältertyp und Charakteristiken
+        basket_type = random.choice(basket_types)
+        base_fill_rate = basket_type["base_fill_rate"]
+        weight_factor = basket_type["weight_factor"]
         
-        # 48 Stunden mit 6-stündigen Intervallen
+        # Waste Basket ID Format wie im Original
+        waste_basket_id = f"WasteBasket_{basket_id}"
+        
+        # Startfüllstand
+        current_fill = random.uniform(5, 25)
+        
+        # 48 Stunden Daten mit verschiedenen Intervallen
+        timestamps = []
+        
+        # Hauptintervalle alle 6 Stunden
         for hour_offset in range(0, 49, 6):
-            timestamp = start_date + timedelta(hours=hour_offset)
+            timestamps.append(start_date + timedelta(hours=hour_offset))
+        
+        # Zusätzliche zufällige Zwischenmessungen
+        for _ in range(random.randint(2, 8)):
+            random_offset = random.uniform(0, 48)
+            timestamps.append(start_date + timedelta(hours=random_offset))
+        
+        # Sortiere Timestamps
+        timestamps.sort()
+        
+        for timestamp in timestamps:
+            hour = timestamp.hour
+            weekday = timestamp.weekday()
             
             # Tageszeit-abhängige Füllrate
-            hour = timestamp.hour
             if 6 <= hour <= 10:  # Morgens
-                fill_increase = random.uniform(3, 8)
+                fill_increase = random.uniform(2, 6) * base_fill_rate
             elif 11 <= hour <= 14:  # Mittags
-                fill_increase = random.uniform(8, 15)
+                fill_increase = random.uniform(6, 12) * base_fill_rate
             elif 15 <= hour <= 18:  # Nachmittags
-                fill_increase = random.uniform(5, 12)
+                fill_increase = random.uniform(4, 10) * base_fill_rate
             elif 19 <= hour <= 22:  # Abends
-                fill_increase = random.uniform(6, 10)
+                fill_increase = random.uniform(3, 8) * base_fill_rate
             else:  # Nacht
-                fill_increase = random.uniform(0, 3)
+                fill_increase = random.uniform(0, 2) * base_fill_rate
+            
+            # Wochenend-Faktor
+            if weekday in [5, 6]:  # Wochenende
+                if basket_type["type"] in ["park", "plaza"]:
+                    fill_increase *= 1.5  # Parks und Plätze voller am Wochenende
+                else:
+                    fill_increase *= 0.7  # Andere weniger voll
+            
+            # Wetter-Einfluss simulieren
+            weather_factor = random.uniform(0.8, 1.3)
+            fill_increase *= weather_factor
             
             current_fill += fill_increase
             
-            # Leerung simulieren
-            if current_fill > 90 or (current_fill > 75 and random.random() < 0.3):
-                current_fill = random.uniform(5, 20)
+            # Leerung simulieren (realistischere Logik)
+            empty_probability = 0
+            if current_fill > 95:
+                empty_probability = 0.9
+            elif current_fill > 85:
+                empty_probability = 0.6
+            elif current_fill > 75:
+                empty_probability = 0.3
+            elif current_fill > 65:
+                empty_probability = 0.1
+            
+            if random.random() < empty_probability:
+                current_fill = random.uniform(2, 15)
             
             # Sensordaten generieren
-            weight = current_fill * random.uniform(0.35, 0.5)
-            temp = random.uniform(-5, 30)
-            humidity = max(20, min(95, 70 + random.uniform(-25, 25)))
+            weight = current_fill * weight_factor * random.uniform(0.8, 1.2)
+            
+            # Realistische Temperatur (Nürnberg)
+            base_temp = 15 if 3 <= timestamp.month <= 10 else 5
+            temp = base_temp + random.uniform(-10, 15)
+            
+            # Realistische Luftfeuchtigkeit
+            humidity = max(30, min(95, 65 + random.uniform(-20, 25)))
+            
+            # Sensorabweichungen simulieren
+            fill_noise = random.uniform(-2, 2)
+            weight_noise = random.uniform(-0.5, 0.5)
+            temp_noise = random.uniform(-1, 1)
             
             data_rows.append({
-                "osm_id": osm_id,
+                "osm_id": waste_basket_id,
                 "timestamp": timestamp,
-                "fill_level": round(current_fill, 1),
-                "weight": round(weight, 2),
-                "temperature": round(temp, 1),
-                "humidity": round(humidity, 1)
+                "fill_level": max(0, min(100, round(current_fill + fill_noise, 1))),
+                "weight": max(0, round(weight + weight_noise, 2)),
+                "temperature": round(temp + temp_noise, 1),
+                "humidity": round(humidity, 1),
+                "latitude": round(lat, 6),
+                "longitude": round(lon, 6),
+                "basket_type": basket_type["type"]
             })
     
+    logger.info(f"✅ {len(data_rows)} Datenpunkte für {num_baskets} Waste Baskets generiert")
     return pd.DataFrame(data_rows)
+
+def generate_random_data_from_geojson(geojson_path="geo/waste_baskets_nbg.geojson"):
+    """
+    Erzeugt zeitbasierte Simulationsdaten für existierende Mülleimer aus GeoJSON
+    mit ID-Logik wie im Map-Skript.
+    """
+    try:
+        with open(geojson_path, "r", encoding="utf-8") as f:
+            geojson = json.load(f)
+    except FileNotFoundError:
+        logger.warning("GeoJSON nicht gefunden – nutze vollständig simulierte Daten.")
+        return generate_realistic_waste_basket_data(1500)
+    
+    features = geojson.get("features", [])
+    if len(features) == 0:
+        logger.warning("GeoJSON enthält keine Features – nutze vollständig simulierte Daten.")
+        return generate_realistic_waste_basket_data(1500)
+
+    start_time = datetime.now() - timedelta(days=2)
+    rows = []
+
+    for i, feature in enumerate(features):
+        # ID & Koordinaten aus deinem Map-Skript
+        osm_id = f"WasteBasket_{i+1}"
+        try:
+            lon, lat = feature["geometry"]["coordinates"]
+        except:
+            lat = random.uniform(49.35, 49.55)
+            lon = random.uniform(10.95, 11.25)
+
+        fill = random.uniform(10, 25)
+        base_fill_rate = random.uniform(1.0, 2.5)
+        weight_factor = random.uniform(0.3, 0.6)
+
+        for hour_offset in range(0, 49, 6):
+            ts = start_time + timedelta(hours=hour_offset)
+            hour = ts.hour
+            weekday = ts.weekday()
+
+            # Tageszeitabhängige Zufälligkeit
+            if 6 <= hour <= 10:
+                fill_inc = random.uniform(1, 4)
+            elif 11 <= hour <= 14:
+                fill_inc = random.uniform(5, 10)
+            elif 15 <= hour <= 18:
+                fill_inc = random.uniform(4, 8)
+            elif 19 <= hour <= 22:
+                fill_inc = random.uniform(3, 6)
+            else:
+                fill_inc = random.uniform(0, 2)
+
+            if weekday in [5, 6]:  # Wochenende boost
+                fill_inc *= 1.2
+
+            fill += fill_inc * base_fill_rate
+
+            # Leeren?
+            if fill > 90 or (fill > 75 and random.random() < 0.3):
+                fill = random.uniform(5, 20)
+
+            # Sensorwerte
+            weight = fill * weight_factor * random.uniform(0.8, 1.2)
+            temp = 5 + random.uniform(-5, 15)  # realistisch für Mitteleuropa
+            humidity = max(30, min(95, 65 + random.uniform(-20, 20)))
+
+            rows.append({
+                "osm_id": osm_id,
+                "timestamp": ts,
+                "fill_level": round(fill, 1),
+                "weight": round(weight, 2),
+                "temperature": round(temp, 1),
+                "humidity": round(humidity, 1),
+                "latitude": round(lat, 6),
+                "longitude": round(lon, 6)
+            })
+
+    logger.info(f"✅ {len(rows)} Datenpunkte generiert aus GeoJSON ({len(features)} Behälter)")
+    return pd.DataFrame(rows)
+
 
 # --- Flask Routen ---
 
@@ -363,7 +505,12 @@ def upload():
                 os.remove(filepath)
 
         elif source == "geojson":
-            df = load_data_from_geojson("geo/waste_baskets_nbg.geojson")
+            df = generate_random_data_from_geojson("geo/waste_baskets_nbg.geojson")
+
+        
+        elif source == "generate":
+            # Neue Option: Generiere 1500 Waste Baskets
+            df = generate_realistic_waste_basket_data(1500)
         
         else:
             return render_template("error.html", 
@@ -393,6 +540,10 @@ def upload():
         output_path = "static/latest_forecast.csv"
         df_results.to_csv(output_path, index=False)
         
+        # Eingangsdaten auch speichern (für Debugging)
+        input_path = "static/latest_input_data.csv"
+        df.to_csv(input_path, index=False)
+        
         # Statistiken
         stats = {
             'total_bins': len(results),
@@ -401,6 +552,7 @@ def upload():
             'low_urgency': len([r for r in results if r['urgency_level'] == 'low']),
             'avg_current_fill': round(df_results['current_fill'].mean(), 1),
             'max_predicted_24h': round(df_results['predicted_fill_24h'].max(), 1),
+            'input_data_points': len(df),
             'warnings': warnings
         }
 
