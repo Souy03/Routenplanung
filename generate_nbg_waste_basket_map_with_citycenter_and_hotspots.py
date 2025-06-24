@@ -34,8 +34,8 @@ folium.GeoJson(
     polygon_geojson,
     name="Innenstadt",
     style_function=lambda x: {
-        "fillColor": "#ffa50055",  # transparenter Orangeton
-        "color": "#ffa500",  # Randfarbe
+        "fillColor": '#4169E1',
+        "color": '#4169E1',  # Randfarbe
         "weight": 2.5,
         "fillOpacity": 0.25,
     }
@@ -79,8 +79,8 @@ for idx, feature in enumerate(data["features"], start=1):
     <b>WasteBasket ID:</b> {props['WasteBasketID']}<br>
     <b>Sensor ID:</b> {props['SensorID']}<br>
     <b>Latitude:</b> {lat:.6f}<br>
-    <b>Longitude:</b> {lon:.6f}<br>
-    <b>Füllstand:</b> {fill_level}%<br>
+    <b>Longitude:</b> {lon:.6f}<br><br>
+    <b>Füllstand:</b> {fill_level}%<br><br>
     <b>Hotspot-Tags:</b> {", ".join(hotspot_tags) if hotspot_tags else "–"}
     """
 
@@ -160,4 +160,3 @@ m.get_root().html.add_child(folium.Element(legend_html))
 # Karte speichern
 m.save(output_html)
 print(f"✅ Karte gespeichert: {output_html}")
-
