@@ -1,0 +1,803 @@
+# enhanced_route_planning_with_hotspots.py
+# -------------------------------------------------------------
+# Erweiterte Müllrouten-Optimierung mit OSRM
+# Verbessertes Design, Hotspot-Analyse & effiziente Routenplanung
+# Alle Syntaxfehler behoben
+# -------------------------------------------------------------
+import json
+import numpy as np
+import geopandas as gpd
+from shapely.geometry import shape, Point
+import requests
+import time
+from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+import folium
+from folium import plugins
+import warnings
+from typing import List, Tuple, Optional, Dict
+from urllib.parse import urlencode
+import pandas as pd
+from sklearn.cluster import DBSCAN
+from scipy.spatial.distance import pdist, squareform
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+
+# ----------------------------- #
+# 1. Erweiterte Konfiguration   #
+# ----------------------------- #
+CONTAINER_FILE   = r"C:\Users\Souh1\Downloads\waste_baskets_with_hotspots.geojson"
+POLYGON_FILE     = r"C:\Users\Souh1\Downloads\nuernberg_innenstadt_polygon.geojson"
+FILL_COL         = "fuellstand"
+FILL_THRESHOLD   = 70
+MAX_CONTAINERS   = 30
+RANDOM_SEED      = 42
+OUTPUT_HTML      = r"C:\Users\Souh1\Documents\enhanced_route_map.html"
+
+# Hotspot-Konfiguration
+HOTSPOT_THRESHOLD = 85  # Kritischer Füllstand für Hotspots
+HOTSPOT_RADIUS = 200    # Meter für Hotspot-Clustering
+MIN_HOTSPOT_SIZE = 2    # Min. Container für Hotspot
+
+# Erweiterte OSRM-Konfiguration
+OSRM_SERVERS = [
+    "http://router.project-osrm.org",
+    "https://routing.openstreetmap.de",
+    "http://localhost:5000"
+]
+
+# Design-Farbschema
+COLORS = {
+    'hotspot_critical': '#FF0000',    # Kritische Hotspots (rot)
+    'hotspot_high': '#FF4500',        # Hohe Priorität (orange-rot)
+    'hotspot_medium': '#FFA500',      # Mittlere Priorität (orange)
+    'container_full': '#FF6B6B',      # Volle Container (hellrot)
+    'container_normal': '#4ECDC4',    # Normale Container (türkis)
+    'route_primary': '#2E86AB',       # Hauptroute (blau)
+    'route_secondary': '#A23B72',     # Nebenroute (lila)
+    'depot': '#F18F01',               # Depot (gold)
+    'background': '#F8F9FA'           # Hintergrund (hellgrau)
+}
+
+# ----------------------------- #
+# 2. Erweiterte OSRM-Klasse     #
+# ----------------------------- #
+class EnhancedOSRMRouter:
+    """Erweiterte OSRM-Integration mit verbesserter Routenoptimierung"""
+    
+    def __init__(self, server_urls: List[str] = None):
+        self.servers = server_urls or OSRM_SERVERS
+        self.active_server = None
+        self.profile = "driving"
+        self._find_working_server()
+    
+    def _find_working_server(self):
+        """Findet einen funktionierenden OSRM-Server"""
+        for server in self.servers:
+            try:
+                test_url = f"{server}/route/v1/{self.profile}/13.4050,52.5200;13.4094,52.5230"
+                response = requests.get(test_url, timeout=5)
+                if response.status_code == 200:
+                    self.active_server = server
+                    print(f"✅ OSRM-Server aktiv: {server}")
+                    return
+            except Exception as e:
+                print(f"⚠️ Server {server} nicht erreichbar: {e}")
+                continue
+        
+        if not self.active_server:
+            raise ConnectionError("❌ Kein OSRM-Server erreichbar!")
+    
+    def get_distance_matrix(self, coordinates: List[Tuple[float, float]]) -> np.ndarray:
+        """Erstellt Entfernungsmatrix mit OSRM"""
+        if not self.active_server:
+            return self._haversine_fallback(coordinates)
+        
+        coords_str = ";".join([f"{lon},{lat}" for lat, lon in coordinates])
+        url = f"{self.active_server}/table/v1/{self.profile}/{coords_str}"
+        params = {'annotations': 'distance,duration'}
+        
+        print(f"📡 Lade OSRM-Matrix für {len(coordinates)} Punkte...")
+        
+        try:
+            response = requests.get(url, params=params, timeout=45)
+            if response.status_code != 200:
+                return self._haversine_fallback(coordinates)
+            
+            data = response.json()
+            if data.get('code') != 'Ok':
+                return self._haversine_fallback(coordinates)
+            
+            distances = np.array(data['distances'])
+            print(f"✅ OSRM-Matrix erfolgreich geladen")
+            return distances.astype(int)
+            
+        except Exception as e:
+            print(f"⚠️ OSRM-Fehler: {e}")
+            return self._haversine_fallback(coordinates)
+    
+    def get_optimized_multi_route(self, coordinates: List[Tuple[float, float]], 
+                                 priorities: List[int], max_route_length: int = 8) -> Dict:
+        """Erstellt mehrere optimierte Routen basierend auf Prioritäten"""
+        
+        # Sortiere nach Priorität (höchste zuerst)
+        indexed_coords = list(enumerate(zip(coordinates, priorities)))
+        indexed_coords.sort(key=lambda x: x[1][1], reverse=True)
+        
+        routes = []
+        remaining_coords = indexed_coords.copy()
+        route_id = 1
+        
+        while remaining_coords:
+            # Erstelle Route mit max_route_length Punkten
+            current_route_coords = []
+            current_route_indices = []
+            
+            # Starte mit höchster Priorität
+            if remaining_coords:
+                idx, (coord, priority) = remaining_coords.pop(0)
+                current_route_coords.append(coord)
+                current_route_indices.append(idx)
+            
+            # Füge nahegelegene Punkte hinzu
+            while len(current_route_coords) < max_route_length and remaining_coords:
+                last_coord = current_route_coords[-1]
+                
+                # Finde nächsten Punkt
+                distances = []
+                for i, (idx, (coord, priority)) in enumerate(remaining_coords):
+                    dist = self._calculate_distance(last_coord, coord)
+                    # Gewichte nach Distanz und Priorität
+                    score = dist / (priority * 0.1 + 1)
+                    distances.append((i, score))
+                
+                # Wähle besten Punkt
+                distances.sort(key=lambda x: x[1])
+                best_idx = distances[0][0]
+                
+                idx, (coord, priority) = remaining_coords.pop(best_idx)
+                current_route_coords.append(coord)
+                current_route_indices.append(idx)
+            
+            if current_route_coords:
+                # Lade echte OSRM-Route für diese Koordinaten
+                osrm_geometry = self.get_route_geometry(current_route_coords)
+                
+                routes.append({
+                    'id': route_id,
+                    'coordinates': current_route_coords,
+                    'indices': current_route_indices,
+                    'color': self._get_route_color(route_id),
+                    'osrm_geometry': osrm_geometry
+                })
+                route_id += 1
+        
+        return {'routes': routes}
+    
+    def get_route_geometry(self, coordinates: List[Tuple[float, float]]) -> Optional[List[List[float]]]:
+        """Lädt echte OSRM-Straßengeometrie für eine Route"""
+        if not self.active_server or len(coordinates) < 2:
+            return None
+        
+        # OSRM erwartet lon,lat Format
+        coords_str = ";".join([f"{lon},{lat}" for lat, lon in coordinates])
+        url = f"{self.active_server}/route/v1/{self.profile}/{coords_str}"
+        
+        params = {
+            'overview': 'full',
+            'geometries': 'geojson',
+            'steps': 'false'
+        }
+        
+        try:
+            response = requests.get(url, params=params, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('code') == 'Ok' and 'routes' in data:
+                    geometry = data['routes'][0]['geometry']['coordinates']
+                    # Konvertiere von lon,lat zu lat,lon für Folium
+                    return [[lat, lon] for lon, lat in geometry]
+        except Exception as e:
+            print(f"⚠️ OSRM-Geometrie-Fehler: {e}")
+        
+        return None
+    
+    def _get_route_color(self, route_id: int) -> str:
+        """Gibt Farbe für Route basierend auf ID zurück"""
+        colors = [COLORS['route_primary'], COLORS['route_secondary'], '#28A745', '#6F42C1', '#FD7E14']
+        return colors[(route_id - 1) % len(colors)]
+    
+    def _calculate_distance(self, coord1: Tuple[float, float], coord2: Tuple[float, float]) -> float:
+        """Berechnet Haversine-Distanz zwischen zwei Koordinaten"""
+        lat1, lon1 = np.radians(coord1)
+        lat2, lon2 = np.radians(coord2)
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
+        return 6371000 * 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+    
+    def _haversine_fallback(self, coordinates: List[Tuple[float, float]]) -> np.ndarray:
+        """Fallback auf Haversine-Distanzen"""
+        print("⚠️ Fallback: Verwende Haversine-Distanzen")
+        n = len(coordinates)
+        matrix = np.zeros((n, n))
+        
+        for i in range(n):
+            for j in range(i+1, n):
+                dist = self._calculate_distance(coordinates[i], coordinates[j])
+                matrix[i][j] = matrix[j][i] = dist
+        
+        return matrix.astype(int)
+
+# ----------------------------- #
+# 3. Hotspot-Analyseklasse      #
+# ----------------------------- #
+class HotspotAnalyzer:
+    """Analysiert und identifiziert kritische Bereiche"""
+    
+    def __init__(self, radius: float = HOTSPOT_RADIUS, min_size: int = MIN_HOTSPOT_SIZE):
+        self.radius = radius
+        self.min_size = min_size
+    
+    def identify_hotspots(self, gdf: gpd.GeoDataFrame, fill_col: str) -> Dict:
+        """Identifiziert Hotspot-Bereiche durch Clustering"""
+        
+        # Bereite Daten vor
+        coords = np.array([[row.geometry.x, row.geometry.y] for _, row in gdf.iterrows()])
+        fill_levels = gdf[fill_col].values
+        
+        # DBSCAN-Clustering basierend auf geografischer Nähe
+        # Konvertiere Radius in Grad (ungefähr)
+        eps_deg = self.radius / 111000  # 111km ≈ 1°
+        
+        clustering = DBSCAN(eps=eps_deg, min_samples=self.min_size).fit(coords)
+        labels = clustering.labels_
+        
+        hotspots = []
+        hotspot_stats = []
+        
+        # Analysiere jeden Cluster
+        for cluster_id in set(labels):
+            if cluster_id == -1:  # Rauschen ignorieren
+                continue
+            
+            cluster_mask = labels == cluster_id
+            cluster_coords = coords[cluster_mask]
+            cluster_fills = fill_levels[cluster_mask]
+            cluster_indices = np.where(cluster_mask)[0]
+            
+            # Berechne Hotspot-Eigenschaften
+            center_lat = np.mean(cluster_coords[:, 1])
+            center_lon = np.mean(cluster_coords[:, 0])
+            avg_fill = np.mean(cluster_fills)
+            max_fill = np.max(cluster_fills)
+            container_count = len(cluster_coords)
+            
+            # Bestimme Prioritätsstufe
+            if max_fill >= 95:
+                priority = 'critical'
+                color = COLORS['hotspot_critical']
+            elif avg_fill >= 85:
+                priority = 'high'
+                color = COLORS['hotspot_high']
+            else:
+                priority = 'medium'
+                color = COLORS['hotspot_medium']
+            
+            hotspot = {
+                'id': len(hotspots),
+                'center': (center_lat, center_lon),
+                'container_count': container_count,
+                'avg_fill': avg_fill,
+                'max_fill': max_fill,
+                'priority': priority,
+                'color': color,
+                'radius': self._calculate_cluster_radius(cluster_coords),
+                'container_indices': cluster_indices.tolist()
+            }
+            
+            hotspots.append(hotspot)
+            hotspot_stats.append({
+                'Hotspot': f"#{len(hotspots)}",
+                'Container': container_count,
+                'Ø Füllstand': f"{avg_fill:.1f}%",
+                'Max Füllstand': f"{max_fill:.1f}%",
+                'Priorität': priority
+            })
+        
+        # Sortiere nach Priorität
+        priority_order = {'critical': 3, 'high': 2, 'medium': 1}
+        hotspots.sort(key=lambda x: (priority_order[x['priority']], x['avg_fill']), reverse=True)
+        
+        return {
+            'hotspots': hotspots,
+            'stats': pd.DataFrame(hotspot_stats) if hotspot_stats else pd.DataFrame(),
+            'total_hotspots': len(hotspots)
+        }
+    
+    def _calculate_cluster_radius(self, coords: np.ndarray) -> float:
+        """Berechnet den Radius eines Clusters"""
+        if len(coords) == 1:
+            return 50  # Standard-Radius für einzelne Punkte
+        
+        center = np.mean(coords, axis=0)
+        distances = [self._haversine_distance(center, coord) for coord in coords]
+        return max(distances) + 25  # Etwas Puffer
+    
+    def _haversine_distance(self, coord1, coord2):
+        """Berechnet Haversine-Distanz"""
+        lat1, lon1 = np.radians(coord1[1]), np.radians(coord1[0])
+        lat2, lon2 = np.radians(coord2[1]), np.radians(coord2[0])
+        dlat, dlon = lat2 - lat1, lon2 - lon1
+        a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
+        return 6371000 * 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+
+# ----------------------------- #
+# 4. Erweiterte Kartenerstellung #
+# ----------------------------- #
+class EnhancedMapBuilder:
+    """Erstellt erweiterte interaktive Karten"""
+    
+    def __init__(self, gdf: gpd.GeoDataFrame, fill_col: str):
+        self.gdf = gdf
+        self.fill_col = fill_col
+        self.center = [gdf.geometry.y.mean(), gdf.geometry.x.mean()]
+    
+    def create_enhanced_map(self, routes: Dict, hotspots: Dict) -> folium.Map:
+        """Erstellt erweiterte Karte mit allen Features"""
+        
+        # Initialisiere Karte mit modernem Style
+        m = folium.Map(
+            location=self.center,
+            zoom_start=14,
+            tiles=None,
+            prefer_canvas=True
+        )
+        
+        # Füge OpenStreetMap hinzu
+        folium.TileLayer(
+            'OpenStreetMap', 
+            name='OpenStreetMap',
+            overlay=False,
+            control=True
+        ).add_to(m)
+        
+        # Füge Hotspot-Heatmap hinzu
+        self._add_hotspot_heatmap(m, hotspots)
+        
+        # Füge Hotspot-Bereiche hinzu
+        self._add_hotspot_areas(m, hotspots)
+        
+        # Füge Container hinzu
+        self._add_enhanced_containers(m, routes, hotspots)
+        
+        # Füge Routen hinzu
+        self._add_enhanced_routes(m, routes)
+        
+        # Füge Kontrollelemente hinzu
+        self._add_controls(m, routes, hotspots)
+        
+        # Füge erweiterte Info-Panels hinzu
+        self._add_info_panels(m, routes, hotspots)
+        
+        return m
+    
+    def _add_hotspot_heatmap(self, m: folium.Map, hotspots: Dict):
+        """Fügt Heatmap für Hotspots hinzu"""
+        if not hotspots['hotspots']:
+            return
+        
+        # Bereite Heatmap-Daten vor
+        heat_data = []
+        for hotspot in hotspots['hotspots']:
+            lat, lon = hotspot['center']
+            # Gewichte basierend auf Füllstand und Container-Anzahl
+            weight = (hotspot['avg_fill'] / 100) * hotspot['container_count']
+            heat_data.append([lat, lon, weight])
+        
+        # Erstelle Heatmap
+        heatmap = plugins.HeatMap(
+            heat_data,
+            name='Hotspot-Heatmap',
+            min_opacity=0.3,
+            max_zoom=18,
+            radius=25,
+            blur=15,
+            gradient={
+                0.0: 'blue',
+                0.3: 'cyan',
+                0.5: 'lime',
+                0.7: 'yellow',
+                1.0: 'red'
+            }
+        ).add_to(m)
+    
+    def _add_hotspot_areas(self, m: folium.Map, hotspots: Dict):
+        """Fügt Hotspot-Bereiche als Kreise hinzu"""
+        for hotspot in hotspots['hotspots']:
+            lat, lon = hotspot['center']
+            hotspot_color = hotspot['color']
+            
+            # Äußerer Kreis für Bereich
+            folium.Circle(
+                location=[lat, lon],
+                radius=hotspot['radius'],
+                color=hotspot_color,
+                weight=3,
+                fill=True,
+                fillColor=hotspot_color,
+                fillOpacity=0.15,
+                popup=folium.Popup(
+                    f"<div style='width: 250px; font-family: Arial;'>"
+                    f"<h4 style='color: {hotspot_color}; margin-top: 0;'>"
+                    f"🔥 Hotspot #{hotspot['id']+1}</h4>"
+                    f"<p><b>Priorität:</b> {hotspot['priority'].upper()}</p>"
+                    f"<p><b>Container:</b> {hotspot['container_count']}</p>"
+                    f"<p><b>Ø Füllstand:</b> {hotspot['avg_fill']:.1f}%</p>"
+                    f"<p><b>Max Füllstand:</b> {hotspot['max_fill']:.1f}%</p>"
+                    f"<p><b>Radius:</b> {hotspot['radius']:.0f}m</p>"
+                    f"</div>", 
+                    max_width=300
+                )
+            ).add_to(m)
+            
+            # Zentraler Marker
+            folium.Marker(
+                location=[lat, lon],
+                icon=folium.Icon(
+                    color='red' if hotspot['priority'] == 'critical' else 'orange',
+                    icon='fire',
+                    prefix='fa'
+                )
+            ).add_to(m)
+    
+    def _add_enhanced_containers(self, m: folium.Map, routes: Dict, hotspots: Dict):
+        """Fügt erweiterte Container-Marker hinzu"""
+        
+        # Bestimme welche Container in Hotspots sind
+        hotspot_containers = set()
+        for hotspot in hotspots['hotspots']:
+            hotspot_containers.update(hotspot['container_indices'])
+        
+        for i, row in self.gdf.iterrows():
+            fill_level = row[self.fill_col]
+            is_hotspot = i in hotspot_containers
+            
+            # Bestimme Marker-Style
+            if is_hotspot:
+                if fill_level >= 95:
+                    color = COLORS['hotspot_critical']
+                    icon = 'warning'
+                    marker_size = 12
+                elif fill_level >= 85:
+                    color = COLORS['hotspot_high']
+                    icon = 'exclamation'
+                    marker_size = 10
+                else:
+                    color = COLORS['hotspot_medium']
+                    icon = 'info'
+                    marker_size = 8
+            else:
+                color = COLORS['container_full'] if fill_level >= 85 else COLORS['container_normal']
+                icon = 'trash'
+                marker_size = 6
+            
+            # Finde Route-Information
+            route_info = self._find_container_route(i, routes)
+            
+            # Container-Marker
+            folium.CircleMarker(
+                location=(row.geometry.y, row.geometry.x),
+                radius=marker_size,
+                color=color,
+                weight=2,
+                fill=True,
+                fillColor=color,
+                fillOpacity=0.8,
+                popup=folium.Popup(
+                    f"<div style='width: 220px; font-family: Arial;'>"
+                    f"<h4 style='color: {color}; margin-top: 0;'>"
+                    f"{'🔥' if is_hotspot else '🗑️'} Container #{i}</h4>"
+                    f"<p><b>Füllstand:</b> {fill_level}%</p>"
+                    f"<p><b>Status:</b> {'Hotspot' if is_hotspot else 'Normal'}</p>"
+                    f"<p><b>Koordinaten:</b> {row.geometry.y:.5f}, {row.geometry.x:.5f}</p>"
+                    f"{f'<p><b>Route:</b> {route_info}</p>' if route_info else ''}"
+                    f"</div>", 
+                    max_width=250
+                )
+            ).add_to(m)
+            
+            # Füllstand-Indikator
+            if fill_level >= 80:
+                folium.Marker(
+                    location=(row.geometry.y, row.geometry.x),
+                    icon=folium.DivIcon(
+                        html=f'<div style="background: {color}; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 10px; border: 2px solid white;">{fill_level}%</div>',
+                        icon_size=(20, 20),
+                        icon_anchor=(10, 10)
+                    )
+                ).add_to(m)
+    
+    def _find_container_route(self, container_idx: int, routes: Dict) -> str:
+        """Findet Route-Information für Container"""
+        if not routes or 'routes' not in routes:
+            return None
+        
+        for route in routes['routes']:
+            if container_idx in route['indices']:
+                pos = route['indices'].index(container_idx)
+                return f"Route {route['id']}, Stop {pos+1}/{len(route['indices'])}"
+        return None
+    
+    def _add_enhanced_routes(self, m: folium.Map, routes: Dict):
+        """Fügt erweiterte Routen mit echten OSRM-Straßengeometrien hinzu"""
+        if not routes or 'routes' not in routes:
+            return
+        
+        for route in routes['routes']:
+            coords = route['coordinates']
+            
+            # Versuche echte OSRM-Route zu laden
+            osrm_geometry = route.get('osrm_geometry')
+            if osrm_geometry:
+                # Verwende echte OSRM-Straßengeometrie
+                folium.PolyLine(
+                    osrm_geometry,
+                    color=route['color'],
+                    weight=5,
+                    opacity=0.9,
+                    popup=f"🛣️ OSRM-Route {route['id']} ({len(coords)} Stops)"
+                ).add_to(m)
+            else:
+                # Fallback: Direkte Verbindungen
+                folium.PolyLine(
+                    coords,
+                    color=route['color'],
+                    weight=4,
+                    opacity=0.7,
+                    popup=f"🚛 Route {route['id']} ({len(coords)} Stops)"
+                ).add_to(m)
+            
+            # Start-/End-Marker
+            if coords:
+                folium.Marker(
+                    location=coords[0],
+                    icon=folium.Icon(color='green', icon='play', prefix='fa'),
+                    popup=f"🚩 Start Route {route['id']}"
+                ).add_to(m)
+                
+                if len(coords) > 1:
+                    folium.Marker(
+                        location=coords[-1],
+                        icon=folium.Icon(color='red', icon='stop', prefix='fa'),
+                        popup=f"🏁 Ende Route {route['id']}"
+                    ).add_to(m)
+    
+    def _add_controls(self, m: folium.Map, routes: Dict, hotspots: Dict):
+        """Fügt Karten-Kontrollelemente hinzu"""
+        # Layer-Kontrolle
+        folium.LayerControl().add_to(m)
+        
+        # Fullscreen-Kontrolle
+        plugins.Fullscreen().add_to(m)
+        
+        # Maus-Position
+        plugins.MousePosition().add_to(m)
+        
+        # Measure-Tool
+        plugins.MeasureControl().add_to(m)
+    
+    def _add_info_panels(self, m: folium.Map, routes: Dict, hotspots: Dict):
+        """Fügt erweiterte Info-Panels hinzu"""
+        
+        # Hauptinfo-Panel
+        total_containers = len(self.gdf)
+        avg_fill = self.gdf[self.fill_col].mean()
+        critical_containers = len(self.gdf[self.gdf[self.fill_col] >= 90])
+        
+        info_html = f'''
+        <div style="position: fixed; top: 10px; left: 10px; width: 320px; 
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    border-radius: 15px; z-index: 9999; padding: 20px;
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.3); color: white; font-family: Arial;">
+        <h3 style="margin-top: 0; text-align: center;">🚛 Smart Waste Routing</h3>
+        <div style="background: rgba(255,255,255,0.2); border-radius: 10px; padding: 15px; margin: 10px 0;">
+            <p><b>📊 Container gesamt:</b> {total_containers}</p>
+            <p><b>📈 Ø Füllstand:</b> {avg_fill:.1f}%</p>
+            <p><b>🚨 Kritisch (≥90%):</b> {critical_containers}</p>
+            <p><b>🔥 Hotspots:</b> {hotspots['total_hotspots']}</p>
+        </div>
+        </div>
+        '''
+        m.get_root().html.add_child(folium.Element(info_html))
+        
+        # Hotspot-Statistiken Panel
+        if hotspots['hotspots']:
+            stats_html = '''
+            <div style="position: fixed; top: 10px; right: 10px; width: 280px; 
+                        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); 
+                        border-radius: 15px; z-index: 9999; padding: 15px;
+                        box-shadow: 0 8px 32px rgba(0,0,0,0.3); color: white; font-family: Arial;">
+            <h4 style="margin-top: 0;">🔥 Hotspot-Prioritäten</h4>
+            '''
+            
+            for i, hotspot in enumerate(hotspots['hotspots'][:5]):  # Top 5
+                priority_icon = '🔴' if hotspot['priority'] == 'critical' else '🟠' if hotspot['priority'] == 'high' else '🟡'
+                stats_html += f'''
+                <div style="background: rgba(255,255,255,0.2); border-radius: 8px; padding: 8px; margin: 5px 0; font-size: 12px;">
+                {priority_icon} <b>Hotspot #{i+1}:</b> {hotspot['container_count']} Container, {hotspot['avg_fill']:.0f}% Ø
+                </div>
+                '''
+            
+            stats_html += '</div>'
+            m.get_root().html.add_child(folium.Element(stats_html))
+        
+        # Moderne Legende
+        legend_html = '''
+        <div style="position: fixed; bottom: 20px; left: 20px; width: 250px; 
+                    background: rgba(40, 44, 52, 0.95); border-radius: 15px; 
+                    z-index: 9999; padding: 15px; color: white; font-family: Arial;
+                    backdrop-filter: blur(10px);">
+        <h4 style="margin-top: 0; color: #61dafb;">🗺️ Legende</h4>
+        <div style="display: flex; align-items: center; margin: 8px 0;">
+            <div style="width: 15px; height: 15px; background: #FF0000; border-radius: 50%; margin-right: 10px;"></div>
+            <span>Kritische Hotspots (≥95%)</span>
+        </div>
+        <div style="display: flex; align-items: center; margin: 8px 0;">
+            <div style="width: 15px; height: 15px; background: #FFA500; border-radius: 50%; margin-right: 10px;"></div>
+            <span>Hotspot-Container</span>
+        </div>
+        <div style="display: flex; align-items: center; margin: 8px 0;">
+            <div style="width: 15px; height: 15px; background: #4ECDC4; border-radius: 50%; margin-right: 10px;"></div>
+            <span>Normale Container</span>
+        </div>
+        <div style="display: flex; align-items: center; margin: 8px 0;">
+            <div style="width: 20px; height: 3px; background: #2E86AB; margin-right: 10px;"></div>
+            <span>Optimierte Routen</span>
+        </div>
+        </div>
+        '''
+        m.get_root().html.add_child(folium.Element(legend_html))
+
+# ----------------------------- #
+# 5. Hilfsfunktionen            #
+# ----------------------------- #
+def load_and_prepare_data():
+    """Lädt und bereitet alle Daten vor"""
+    print("📥 Lade Geodaten...")
+    
+    # Polygon laden
+    try:
+        with open(POLYGON_FILE, encoding="utf-8") as f:
+            polygon_data = json.load(f)
+        city_poly = shape(polygon_data["features"][0]["geometry"])
+    except FileNotFoundError:
+        print(f"⚠️ Polygon-Datei nicht gefunden: {POLYGON_FILE}")
+        print("💡 Fahre ohne Polygon-Filter fort...")
+        city_poly = None
+    
+    # Container laden
+    try:
+        gdf = gpd.read_file(CONTAINER_FILE).to_crs(4326)
+    except FileNotFoundError:
+        print(f"❌ Container-Datei nicht gefunden: {CONTAINER_FILE}")
+        return None
+    
+    gdf["lon"] = gdf.geometry.x
+    gdf["lat"] = gdf.geometry.y
+    
+    # Polygon-Filter anwenden falls vorhanden
+    if city_poly is not None:
+        gdf = gdf[gdf.within(city_poly)]
+    
+    # Füllstände simulieren falls nicht vorhanden
+    if FILL_COL not in gdf.columns:
+        warnings.warn(f"Spalte '{FILL_COL}' nicht gefunden – simuliere Füllstände")
+        np.random.seed(RANDOM_SEED)
+        gdf[FILL_COL] = np.random.randint(30, 100, size=len(gdf))
+    
+    # Filter nach Füllstand
+    gdf = gdf[gdf[FILL_COL] >= FILL_THRESHOLD].reset_index(drop=True)
+    
+    if MAX_CONTAINERS:
+        gdf = gdf.iloc[:MAX_CONTAINERS].copy()
+    
+    if gdf.empty:
+        raise ValueError("⚠️ Keine Container erfüllen die Filterkriterien!")
+    
+    print(f"✅ {len(gdf)} Container geladen")
+    return gdf
+
+def main():
+    print("🚛 Erweiterte Müllrouten-Optimierung")
+    print("=" * 50)
+    
+    try:
+        # Daten laden
+        gdf = load_and_prepare_data()
+        if gdf is None:
+            return
+        
+        # Hotspot-Analyse
+        print("🔥 Analysiere Hotspots...")
+        hotspot_analyzer = HotspotAnalyzer()
+        hotspots = hotspot_analyzer.identify_hotspots(gdf, FILL_COL)
+        
+        print(f"✅ {hotspots['total_hotspots']} Hotspots identifiziert")
+        if not hotspots['stats'].empty:
+            print("\n📊 Hotspot-Übersicht:")
+            print(hotspots['stats'].to_string(index=False))
+        
+        # OSRM-Router initialisieren
+        print("\n📡 Initialisiere OSRM-Router...")
+        try:
+            router = EnhancedOSRMRouter()
+        except ConnectionError as e:
+            print(e)
+            print("\n💡 LÖSUNGEN:")
+            print("1. Internet-Verbindung prüfen")
+            print("2. Lokaler OSRM-Server: docker run -t -i -p 5000:5000 osrm/osrm-backend")
+            
+            # Fallback: Einfache Koordinaten-basierte Routen
+            print("⚠️ Verwende vereinfachte Routenplanung...")
+            router = None
+        
+        # Koordinaten und Prioritäten vorbereiten
+        coordinates = [(row.lat, row.lon) for _, row in gdf.iterrows()]
+        
+        # Berechne Prioritäten basierend auf Füllstand und Hotspot-Status
+        priorities = []
+        hotspot_containers = set()
+        for hotspot in hotspots['hotspots']:
+            hotspot_containers.update(hotspot['container_indices'])
+        
+        for i, row in gdf.iterrows():
+            base_priority = row[FILL_COL]
+            if i in hotspot_containers:
+                base_priority += 20  # Hotspot-Bonus
+            priorities.append(int(base_priority))
+        
+        # Routen erstellen
+        if router:
+            print("🎯 Erstelle optimierte Routen...")
+            routes = router.get_optimized_multi_route(coordinates, priorities, max_route_length=8)
+            print(f"✅ {len(routes['routes'])} optimierte Routen erstellt")
+        else:
+            # Fallback: Einfache Routen
+            routes = {'routes': []}
+            print("⚠️ Keine OSRM-Verbindung - Routen werden in der Karte manuell angezeigt")
+        
+        # Erweiterte Karte erstellen
+        print("🗺️ Erstelle erweiterte Karte...")
+        map_builder = EnhancedMapBuilder(gdf, FILL_COL)
+        m = map_builder.create_enhanced_map(routes, hotspots)
+        
+        # Karte speichern
+        m.save(OUTPUT_HTML)
+        print(f"✅ Erweiterte Karte gespeichert: {OUTPUT_HTML}")
+        
+        # Statistiken ausgeben
+        print(f"\n📊 ERGEBNISSE:")
+        print(f"   🎯 Container gesamt: {len(gdf)}")
+        print(f"   🔥 Hotspots identifiziert: {hotspots['total_hotspots']}")
+        print(f"   🚛 Routen erstellt: {len(routes['routes']) if routes else 0}")
+        print(f"   📈 Durchschnittlicher Füllstand: {gdf[FILL_COL].mean():.1f}%")
+        print(f"   🚨 Kritische Container (≥90%): {len(gdf[gdf[FILL_COL] >= 90])}")
+        
+        # Karte im Browser öffnen
+        import webbrowser
+        try:
+            webbrowser.open(OUTPUT_HTML)
+            print(f"🌐 Karte wurde im Browser geöffnet")
+        except:
+            print(f"💡 Öffnen Sie manuell: {OUTPUT_HTML}")
+        
+    except Exception as e:
+        print(f"❌ Fehler: {e}")
+        print("\n💡 Mögliche Lösungen:")
+        print("- Datenpfade überprüfen")
+        print("- Internet-Verbindung für OSRM testen")
+        print("- Abhängigkeiten installieren:")
+        print("  pip install folium geopandas scikit-learn pandas numpy requests ortools")
+
+if __name__ == "__main__":
+    main()
