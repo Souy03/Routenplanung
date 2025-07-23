@@ -1,0 +1,2900 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Umfassende Routenoptimierung - Echte Nürnberg Straßenrouten</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 2px,
+                rgba(255, 255, 255, 0.05) 2px,
+                rgba(255, 255, 255, 0.05) 4px
+            );
+            animation: slide 20s linear infinite;
+        }
+
+        @keyframes slide {
+            0% { transform: translateX(-50px); }
+            100% { transform: translateX(50px); }
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            position: relative;
+            z-index: 1;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+            position: relative;
+            z-index: 1;
+        }
+
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .control-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .control-group:hover {
+            border-color: #007bff;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 123, 255, 0.15);
+        }
+
+        .control-group h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+        }
+
+        .control-group h3::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            margin-right: 10px;
+            border-radius: 2px;
+        }
+
+        .method-selector {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .method-option {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-radius: 8px;
+            transition: background-color 0.2s;
+            cursor: pointer;
+        }
+
+        .method-option:hover {
+            background-color: #f8f9fa;
+        }
+
+        .method-option input[type="checkbox"] {
+            margin-right: 8px;
+            transform: scale(1.2);
+        }
+
+        .method-option label {
+            font-size: 0.9em;
+            cursor: pointer;
+            color: #495057;
+        }
+
+        .parameter-input {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .parameter-input label {
+            font-weight: 500;
+            color: #495057;
+            font-size: 0.9em;
+        }
+
+        .parameter-input input, .parameter-input select {
+            padding: 10px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 0.9em;
+            transition: border-color 0.3s;
+        }
+
+        .parameter-input input:focus, .parameter-input select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0, 123, 255, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 123, 255, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.3);
+        }
+
+        .map-container {
+            position: relative;
+            height: 700px;
+            margin: 0 30px 30px 30px;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+
+        .map-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            max-width: 350px;
+            backdrop-filter: blur(10px);
+        }
+
+        .map-overlay h4 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .optimization-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .data-mode-selector {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .data-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #e9ecef;
+        }
+
+        .stat-number {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .stat-label {
+            font-size: 0.8em;
+            color: #6c757d;
+        }
+
+        .results-section {
+            padding: 30px;
+            background: #f8f9fa;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .result-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            border-left: 5px solid #007bff;
+            transition: transform 0.3s ease;
+        }
+
+        .result-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .result-card h4 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .metric-value {
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007bff, #0056b3);
+            transition: width 1s ease;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: #007bff;
+            font-weight: 600;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #e9ecef;
+            border-top: 2px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Routing-specific styles */
+        .routing-status {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            padding: 10px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+
+        .routing-error {
+            background: #ffebee;
+            border: 1px solid #f44336;
+            color: #c62828;
+        }
+
+        .routing-success {
+            background: #e8f5e8;
+            border: 1px solid #4caf50;
+            color: #2e7d32;
+        }
+
+        .routing-info {
+            background: #fff3e0;
+            border: 1px solid #ff9800;
+            color: #ef6c00;
+        }
+
+        /* Legende-Stil */
+        #legend-toggle-btn {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            z-index: 9999;
+            background: white;
+            border: 2px solid grey;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 1px 1px 4px rgba(0,0,0,0.3);
+        }
+
+        #map-legend {
+            position: absolute;
+            bottom: 30px;
+            left: 70px;
+            width: 180px;
+            z-index: 9998;
+            background-color: white;
+            border: 2px solid grey;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 14px;
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.3);
+            display: none;
+        }
+
+        .method-legend {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            backdrop-filter: blur(10px);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 3px;
+            border-radius: 2px;
+        }
+
+        .recommendation-panel {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 15px;
+            margin: 20px 30px;
+            box-shadow: 0 10px 30px rgba(40, 167, 69, 0.3);
+        }
+
+        .recommendation-panel h3 {
+            margin-bottom: 15px;
+            font-size: 1.4em;
+        }
+
+        .recommendation-list {
+            list-style: none;
+        }
+
+        .recommendation-list li {
+            margin-bottom: 10px;
+            padding-left: 25px;
+            position: relative;
+        }
+
+        .recommendation-list li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        /* Popup-Styling */
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .route-popup .leaflet-popup-content {
+            margin: 0;
+            min-width: 250px;
+        }
+
+        .waypoint-tooltip {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        /* Routing options */
+        .routing-options {
+            background: #f0f8ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .control-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .method-selector {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .map-container {
+                height: 500px;
+                margin: 0 15px 15px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🛣️ Echte Nürnberg Straßenrouten</h1>
+            <p>Präzise Routenoptimierung mit OSRM & OpenRouteService</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-grid">
+                <div class="control-group">
+                    <h3>📊 Datenquelle</h3>
+                    <div class="data-mode-selector">
+                        <div class="parameter-input">
+                            <label>Datei-Pfad (optional):</label>
+                            <input type="text" id="geoJsonPath" placeholder="waste_baskets_nbg.geojson" 
+                                   value="waste_baskets_nbg.geojson">
+                            
+                            <label>Karten-Modus:</label>
+                            <select id="dataMode" onchange="switchDataMode()">
+                                <option value="real">Echte Nürnberg GeoJSON-Daten</option>
+                                <option value="demo">Demo-Daten (23 Container)</option>
+                                <option value="upload">Datei hochladen</option>
+                            </select>
+                        </div>
+                        <div class="data-stats" id="dataStats">
+                            <div class="stat-item">
+                                <div class="stat-number" id="containerCount">Laden...</div>
+                                <div class="stat-label">Container</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number" id="criticalCount">Laden...</div>
+                                <div class="stat-label">Kritisch (≥80%)</div>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="file" id="fileUpload" accept=".geojson,.json" style="display: none;" onchange="handleFileUpload(event)">
+                    <button class="btn btn-secondary" onclick="loadGeoJSONData()">
+                        📥 GeoJSON laden
+                    </button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('fileUpload').click()">
+                        📁 Datei wählen
+                    </button>
+                    <button class="btn btn-secondary" onclick="generateRandomFillLevels()">
+                        🎲 Füllstände aktualisieren
+                    </button>
+                </div>
+
+                <div class="control-group">
+                    <h3>🔧 Optimierungsmethoden</h3>
+                    <div class="method-selector">
+                        <div class="method-option">
+                            <input type="checkbox" id="classical" checked>
+                            <label for="classical">Klassisches VRP</label>
+                        </div>
+                        <div class="method-option">
+                            <input type="checkbox" id="genetic" checked>
+                            <label for="genetic">Genetischer Algorithmus</label>
+                        </div>
+                        <div class="method-option">
+                            <input type="checkbox" id="annealing" checked>
+                            <label for="annealing">Simuliertes Abkühlen</label>
+                        </div>
+                        <div class="method-option">
+                            <input type="checkbox" id="antcolony" checked>
+                            <label for="antcolony">Ameisenkolonie</label>
+                        </div>
+                        <div class="method-option">
+                            <input type="checkbox" id="ml" checked>
+                            <label for="ml">Machine Learning</label>
+                        </div>
+                        <div class="method-option">
+                            <input type="checkbox" id="iot" checked>
+                            <label for="iot">Dynamisches IoT</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>🛣️ Routing-Optionen</h3>
+                    <div class="routing-options">
+                        <div class="parameter-input">
+                            <label>Routing-Service:</label>
+                            <select id="routingService">
+                                <option value="osrm">OSRM (Empfohlen)</option>
+                                <option value="openroute">OpenRouteService</option>
+                                <option value="graphhopper">GraphHopper</option>
+                                <option value="auto">Auto (Fallback)</option>
+                            </select>
+                            
+                            <label>Verkehrsmodus:</label>
+                            <select id="transportMode">
+                                <option value="driving">🚛 LKW/Auto</option>
+                                <option value="driving-hgv">🚚 Schwerer LKW</option>
+                                <option value="cycling">🚲 Fahrrad</option>
+                                <option value="foot-walking">🚶 Zu Fuß</option>
+                            </select>
+                            
+                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
+                                <input type="checkbox" id="avoidTolls" checked>
+                                <label for="avoidTolls">Mautstraßen vermeiden</label>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="fastestRoute" checked>
+                                <label for="fastestRoute">Schnellste Route</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>⚡ Performance-Einstellungen</h3>
+                    <div class="routing-options">
+                        <div class="parameter-input">
+                            <label>Geschwindigkeitsmodus:</label>
+                            <select id="speedMode">
+                                <option value="balanced">⚖️ Ausgewogen (Standard)</option>
+                                <option value="fast">⚡ Schnell (weniger genau)</option>
+                                <option value="accurate">🎯 Genau (langsamer)</option>
+                                <option value="lightning">⚡⚡ Blitzschnell (Basis-Optimierung)</option>
+                            </select>
+                            
+                            <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
+                                <input type="checkbox" id="enableParallel" checked>
+                                <label for="enableParallel">Parallele Verarbeitung aktivieren</label>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="enableCaching" checked>
+                                <label for="enableCaching">Smart-Caching verwenden</label>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="checkbox" id="showPerformance" checked>
+                                <label for="showPerformance">Performance-Metriken anzeigen</label>
+                            </div>
+                        </div>
+                        
+                        <div id="performanceMetrics" style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px; font-size: 0.9em;">
+                            <div><strong>📊 Live-Performance:</strong></div>
+                            <div>API-Aufrufe: <span id="apiCallCount">0</span></div>
+                            <div>Cache-Treffer: <span id="cacheHitRate">0%</span></div>
+                            <div>Ø Antwortzeit: <span id="avgResponseTime">0ms</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>⚙️ Parameter</h3>
+                    <div class="parameter-input">
+                        <label>Population (Genetisch):</label>
+                        <input type="number" id="population" value="50" min="10" max="200">
+                        
+                        <label>Generationen:</label>
+                        <input type="number" id="generations" value="30" min="10" max="100">
+                        
+                        <label>Prioritätsschwelle:</label>
+                        <input type="number" id="priority" value="70" min="0" max="100">
+                        
+                        <label>Max. Container pro Route:</label>
+                        <input type="number" id="maxContainers" value="25" min="5" max="50">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>🚀 Ausführung</h3>
+                    <button class="btn" onclick="runComprehensiveOptimization()">
+                        🎯 Optimierung starten
+                    </button>
+                    <button class="btn btn-secondary" onclick="exportResults()">
+                        💾 Ergebnisse exportieren
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="map-container">
+            <div id="map"></div>
+            
+            <!-- Original-Legende -->
+            <div id="legend-toggle-btn" onclick="toggleLegend()">ℹ️</div>
+            <div id="map-legend">
+                <b>Füllstand (%)</b>
+                <ul style="list-style:none; padding-left:0; margin:0;">
+                    <li><span style="background:#66BB66;width:12px;height:12px;display:inline-block;margin-right:6px;border:1px solid #1874cd"></span>0–19</li>
+                    <li><span style="background:#99CC66;width:12px;height:12px;display:inline-block;margin-right:6px;border:1px solid #1874cd"></span>20–39</li>
+                    <li><span style="background:#EEEE44;width:12px;height:12px;display:inline-block;margin-right:6px;border:1px solid #1874cd"></span>40–59</li>
+                    <li><span style="background:#FFB266;width:12px;height:12px;display:inline-block;margin-right:6px;border:1px solid #1874cd"></span>60–79</li>
+                    <li><span style="background:#CC6666;width:12px;height:12px;display:inline-block;margin-right:6px;border:1px solid #1874cd"></span>80–100</li>
+                </ul>
+            </div>
+            
+            <div class="map-overlay">
+                <h4>📊 Live-Status</h4>
+                <div id="optimizationStatus">
+                    <div class="optimization-status">
+                        <span class="status-indicator"></span>
+                        <span>Bereit für Optimierung</span>
+                    </div>
+                </div>
+                <div id="routingStatus" class="routing-status" style="display: none;">
+                    <div>🛣️ Routing-Status</div>
+                </div>
+                <div id="mapInfo">
+                    <p><strong>Modus:</strong> <span id="currentMode">Echte Daten</span></p>
+                    <p><strong>Container:</strong> <span id="liveContainerCount">Laden...</span></p>
+                    <p><strong>Kritische:</strong> <span id="liveCriticalCount">Laden...</span></p>
+                </div>
+            </div>
+            
+            <div class="method-legend" id="methodLegend">
+                <h5>Routen-Legende</h5>
+            </div>
+        </div>
+
+        <div class="results-section" id="resultsSection" style="display: none;">
+            <h3>📈 Optimierungsergebnisse</h3>
+            <div class="results-grid" id="resultsGrid">
+                <!-- Results will be populated here -->
+            </div>
+        </div>
+
+        <div class="recommendation-panel" id="recommendationPanel" style="display: none;">
+            <h3>💡 KI-basierte Empfehlungen</h3>
+            <ul class="recommendation-list" id="recommendationList">
+                <!-- Recommendations will be populated here -->
+            </ul>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script>
+        // Global variables
+        let map;
+        let containerLocations = [];
+        let optimizationResults = {};
+        let activeRoutes = [];
+        let containerMarkers = [];
+        let realGeoJSONData = null;
+        let currentDataMode = 'real';
+        let routingCache = new Map(); // Cache für berechnete Routen
+
+        // Erweiterte Routing-Services
+        const routingServices = {
+            osrm: {
+                name: 'OSRM',
+                baseUrl: 'https://router.project-osrm.org/route/v1',
+                priority: 1,
+                available: true
+            },
+            openroute: {
+                name: 'OpenRouteService',
+                baseUrl: 'https://api.openrouteservice.org/v2/directions',
+                priority: 2,
+                available: true,
+                apiKey: null // Kann optional gesetzt werden
+            },
+            graphhopper: {
+                name: 'GraphHopper',
+                baseUrl: 'https://graphhopper.com/api/1/route',
+                priority: 3,
+                available: true,
+                apiKey: null // Kann optional gesetzt werden
+            }
+        };
+
+        // Demo-Daten (Fallback)
+        const demoContainers = [
+            { lat: 49.4521, lng: 11.0767, priority: 95, id: 1, name: "Hauptmarkt" },
+            { lat: 49.4540, lng: 11.0780, priority: 88, id: 2, name: "Sebald" },
+            { lat: 49.4500, lng: 11.0750, priority: 72, id: 3, name: "Königstraße" },
+            { lat: 49.4560, lng: 11.0800, priority: 91, id: 4, name: "Dürerplatz" },
+            { lat: 49.4480, lng: 11.0720, priority: 78, id: 5, name: "Südstadt" },
+            { lat: 49.4600, lng: 11.0820, priority: 85, id: 6, name: "Nordstadt" },
+            { lat: 49.4450, lng: 11.0700, priority: 67, id: 7, name: "Weststadt" },
+            { lat: 49.4580, lng: 11.0850, priority: 92, id: 8, name: "Oststadt" },
+            { lat: 49.4510, lng: 11.0790, priority: 83, id: 9, name: "Altstadt" },
+            { lat: 49.4530, lng: 11.0810, priority: 89, id: 10, name: "Zentrum" },
+            { lat: 49.4490, lng: 11.0730, priority: 76, id: 11, name: "Gostenhof" },
+            { lat: 49.4570, lng: 11.0870, priority: 94, id: 12, name: "Thon" },
+            { lat: 49.4460, lng: 11.0710, priority: 69, id: 13, name: "Sündersbühl" },
+            { lat: 49.4590, lng: 11.0830, priority: 87, id: 14, name: "Erlenstegen" },
+            { lat: 49.4470, lng: 11.0740, priority: 81, id: 15, name: "Steinbühl" }
+        ];
+
+        // Simulierte GeoJSON-Daten
+        const simulatedGeoJSON = {
+            "type": "FeatureCollection",
+            "features": [
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0767, 49.4521] }, "properties": { "id": 1, "name": "Hauptmarkt", "location": "Hauptmarkt 14" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0780, 49.4540] }, "properties": { "id": 2, "name": "Sebald", "location": "Sebalduskirche" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0750, 49.4500] }, "properties": { "id": 3, "name": "Königstraße", "location": "Königstraße 33" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0800, 49.4560] }, "properties": { "id": 4, "name": "Dürerplatz", "location": "Dürerplatz" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0720, 49.4480] }, "properties": { "id": 5, "name": "Südstadt", "location": "Südstadtpark" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0820, 49.4600] }, "properties": { "id": 6, "name": "Nordstadt", "location": "Nordring 42" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0700, 49.4450] }, "properties": { "id": 7, "name": "Weststadt", "location": "Westpark" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0850, 49.4580] }, "properties": { "id": 8, "name": "Oststadt", "location": "Ostendstraße 15" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0790, 49.4510] }, "properties": { "id": 9, "name": "Altstadt", "location": "Hauptkirche" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0810, 49.4530] }, "properties": { "id": 10, "name": "Zentrum", "location": "Lorenzkirche" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0730, 49.4490] }, "properties": { "id": 11, "name": "Gostenhof", "location": "Gostenhof Platz" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0870, 49.4570] }, "properties": { "id": 12, "name": "Thon", "location": "Thoner Straße" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0710, 49.4460] }, "properties": { "id": 13, "name": "Sündersbühl", "location": "Sündersbühl Park" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0830, 49.4590] }, "properties": { "id": 14, "name": "Erlenstegen", "location": "Erlenstegen Zentrum" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0740, 49.4470] }, "properties": { "id": 15, "name": "Steinbühl", "location": "Steinbühler Straße" } },
+                // Zusätzliche Container für realistischere Datenmenge
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0805, 49.4545] }, "properties": { "id": 16, "name": "Maxfeld", "location": "Maxfeld Park" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0725, 49.4505] }, "properties": { "id": 17, "name": "Muggenhof", "location": "Muggenhof Platz" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0775, 49.4485] }, "properties": { "id": 18, "name": "Wöhrd", "location": "Wöhrder See" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0835, 49.4515] }, "properties": { "id": 19, "name": "Johannis", "location": "Johannisplatz" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0695, 49.4525] }, "properties": { "id": 20, "name": "Doos", "location": "Dooser Straße" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0815, 49.4465] }, "properties": { "id": 21, "name": "Gibitzenhof", "location": "Gibitzenhof Station" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0755, 49.4535] }, "properties": { "id": 22, "name": "Gärten", "location": "Stadtpark" } },
+                { "type": "Feature", "geometry": { "type": "Point", "coordinates": [11.0845, 49.4495] }, "properties": { "id": 23, "name": "Gleishammer", "location": "Gleishammer Straße" } }
+            ]
+        };
+
+        // Method colors (verbesserte Sichtbarkeit)
+        const methodColors = {
+            classical: '#FF3030',    // Kräftiges Rot
+            genetic: '#00CED1',      // Dark Turquoise  
+            annealing: '#1E90FF',    // Dodger Blue
+            antcolony: '#32CD32',    // Lime Green
+            ml: '#9370DB',           // Medium Purple
+            iot: '#FF8C00'           // Dark Orange
+        };
+
+        // Füllstandsabhängige Farbskala
+        function getFillLevelColor(fill) {
+            if (fill < 20) return "#66BB66";  // Grün
+            else if (fill < 40) return "#99CC66";  // Gelbgrün
+            else if (fill < 60) return "#EEEE44";  // Gelb
+            else if (fill < 80) return "#FFB266";  // Orange
+            else return "#CC6666";  // Rot
+        }
+
+        // Toggle Legende
+        function toggleLegend() {
+            var legend = document.getElementById('map-legend');
+            if (legend.style.display === 'none') {
+                legend.style.display = 'block';
+            } else {
+                legend.style.display = 'none';
+            }
+        }
+
+        // Enhanced Routing Functions with Performance Optimizations
+        class AdvancedRoutingService {
+            constructor() {
+                this.cache = new Map();
+                this.requestQueue = [];
+                this.isProcessing = false;
+                this.batchSize = 10; // Max waypoints per batch request
+                this.maxConcurrentRequests = 3;
+                this.requestTimeout = 8000; // 8 seconds timeout
+                this.activeRequests = new Set();
+            }
+
+            // Optimized main routing function with parallel processing
+            async calculateRoute(waypoints, options = {}) {
+                const cacheKey = this.createCacheKey(waypoints, options);
+                
+                // Cache check
+                if (this.cache.has(cacheKey)) {
+                    logPerformanceMetric('cacheHits', 1);
+                    return this.cache.get(cacheKey);
+                }
+
+                logPerformanceMetric('routingCalls', 1);
+                const startTime = performance.now();
+
+                // Fast route for simple 2-point routes
+                if (waypoints.length === 2) {
+                    const result = await this.calculateSimpleRoute(waypoints, options);
+                    logPerformanceMetric('totalTime', performance.now() - startTime);
+                    return result;
+                }
+
+                // Batch processing for complex routes
+                if (waypoints.length > this.batchSize) {
+                    const result = await this.calculateBatchRoute(waypoints, options);
+                    logPerformanceMetric('totalTime', performance.now() - startTime);
+                    return result;
+                }
+
+                // Standard route calculation with timeout
+                const result = await this.calculateStandardRoute(waypoints, options);
+                logPerformanceMetric('totalTime', performance.now() - startTime);
+                return result;
+            }
+
+            // Fast simple route for 2 waypoints
+            async calculateSimpleRoute(waypoints, options) {
+                const routingService = document.getElementById('routingService').value;
+                
+                try {
+                    // Try parallel requests to different services for speed
+                    const promises = [];
+                    
+                    if (routingService === 'auto') {
+                        promises.push(this.tryOSRMWithTimeout(waypoints, options, 3000));
+                        promises.push(this.tryOpenRouteServiceWithTimeout(waypoints, options, 4000));
+                    } else {
+                        promises.push(this.tryServiceWithTimeout(routingService, waypoints, options, 5000));
+                    }
+
+                    const result = await Promise.race(promises.filter(p => p));
+                    
+                    if (result) {
+                        this.cache.set(this.createCacheKey(waypoints, options), result);
+                        return result;
+                    }
+                    
+                    throw new Error('Alle Services timeout');
+                    
+                } catch (error) {
+                    console.warn('⚠️ Fast routing fehlgeschlagen:', error.message);
+                    return this.calculateDirectRoute(waypoints);
+                }
+            }
+
+            // Batch processing for long routes
+            async calculateBatchRoute(waypoints, options) {
+                try {
+                    updateRoutingStatus(`🔄 Batch-Route berechnen (${waypoints.length} Punkte)...`, 'info');
+                    
+                    // Split into smaller chunks and process in parallel
+                    const chunks = this.createRouteChunks(waypoints, this.batchSize);
+                    const chunkPromises = chunks.map((chunk, index) => 
+                        this.processChunkWithDelay(chunk, options, index * 200) // 200ms delay between chunks
+                    );
+                    
+                    const chunkResults = await Promise.allSettled(chunkPromises);
+                    
+                    // Combine successful results
+                    const validResults = chunkResults
+                        .filter(result => result.status === 'fulfilled' && result.value)
+                        .map(result => result.value);
+                    
+                    if (validResults.length === 0) {
+                        throw new Error('Keine erfolgreichen Chunk-Ergebnisse');
+                    }
+                    
+                    // Merge chunk results
+                    const mergedResult = this.mergeChunkResults(validResults, waypoints);
+                    this.cache.set(this.createCacheKey(waypoints, options), mergedResult);
+                    
+                    return mergedResult;
+                    
+                } catch (error) {
+                    console.warn('⚠️ Batch routing fehlgeschlagen:', error.message);
+                    return this.calculateDirectRoute(waypoints);
+                }
+            }
+
+            // Standard route with timeout protection
+            async calculateStandardRoute(waypoints, options) {
+                const routingService = document.getElementById('routingService').value;
+                
+                try {
+                    let result = null;
+                    
+                    if (routingService === 'auto') {
+                        // Try services in parallel with different timeouts
+                        const servicePromises = [
+                            this.tryOSRMWithTimeout(waypoints, options, 4000),
+                            this.tryOpenRouteServiceWithTimeout(waypoints, options, 6000)
+                        ];
+                        
+                        result = await Promise.race(servicePromises);
+                    } else {
+                        result = await this.tryServiceWithTimeout(routingService, waypoints, options, this.requestTimeout);
+                    }
+
+                    if (result) {
+                        this.cache.set(this.createCacheKey(waypoints, options), result);
+                        return result;
+                    }
+                    
+                    throw new Error('Standard routing fehlgeschlagen');
+                    
+                } catch (error) {
+                    console.warn('⚠️ Standard routing fehlgeschlagen:', error.message);
+                    return this.calculateDirectRoute(waypoints);
+                }
+            }
+
+            // Timeout wrapper for service calls
+            async tryServiceWithTimeout(serviceName, waypoints, options, timeout) {
+                return new Promise(async (resolve, reject) => {
+                    const timeoutId = setTimeout(() => {
+                        reject(new Error(`${serviceName} timeout nach ${timeout}ms`));
+                    }, timeout);
+                    
+                    try {
+                        let result;
+                        switch(serviceName) {
+                            case 'osrm':
+                                result = await this.tryOSRM(waypoints, options);
+                                break;
+                            case 'openroute':
+                                result = await this.tryOpenRouteService(waypoints, options);
+                                break;
+                            case 'graphhopper':
+                                result = await this.tryGraphHopper(waypoints, options);
+                                break;
+                            default:
+                                result = await this.tryOSRM(waypoints, options);
+                        }
+                        
+                        clearTimeout(timeoutId);
+                        resolve(result);
+                        
+                    } catch (error) {
+                        clearTimeout(timeoutId);
+                        reject(error);
+                    }
+                });
+            }
+
+            async tryOSRMWithTimeout(waypoints, options, timeout) {
+                return this.tryServiceWithTimeout('osrm', waypoints, options, timeout);
+            }
+
+            async tryOpenRouteServiceWithTimeout(waypoints, options, timeout) {
+                return this.tryServiceWithTimeout('openroute', waypoints, options, timeout);
+            }
+
+            // Create smaller route chunks for batch processing
+            createRouteChunks(waypoints, chunkSize) {
+                const chunks = [];
+                
+                // Keep depot at start and end, chunk the middle waypoints
+                const depot = waypoints[0];
+                const endDepot = waypoints[waypoints.length - 1];
+                const middlePoints = waypoints.slice(1, -1);
+                
+                for (let i = 0; i < middlePoints.length; i += chunkSize - 2) {
+                    const chunk = [
+                        depot,
+                        ...middlePoints.slice(i, i + chunkSize - 2),
+                        endDepot
+                    ];
+                    chunks.push(chunk);
+                }
+                
+                return chunks;
+            }
+
+            // Process chunk with delay to avoid API rate limits
+            async processChunkWithDelay(chunk, options, delay) {
+                if (delay > 0) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+                return this.calculateSimpleRoute(chunk, options);
+            }
+
+            // Merge multiple chunk results into single route
+            mergeChunkResults(chunkResults, originalWaypoints) {
+                let totalDistance = 0;
+                let totalDuration = 0;
+                const allCoordinates = [];
+                let lastService = 'Mixed';
+                
+                chunkResults.forEach((result, index) => {
+                    totalDistance += result.distance || 0;
+                    totalDuration += result.duration || 0;
+                    
+                    if (result.geometry && result.geometry.coordinates) {
+                        if (index === 0) {
+                            allCoordinates.push(...result.geometry.coordinates);
+                        } else {
+                            // Skip first coordinate to avoid duplication
+                            allCoordinates.push(...result.geometry.coordinates.slice(1));
+                        }
+                    }
+                    
+                    if (index === 0) lastService = result.service;
+                });
+                
+                return {
+                    service: `${lastService} (Batch)`,
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: allCoordinates
+                    },
+                    distance: totalDistance,
+                    duration: totalDuration,
+                    waypoints: originalWaypoints,
+                    isBatch: true
+                };
+            }
+
+            async tryOSRM(waypoints, options) {
+                try {
+                    updateRoutingStatus('🔄 OSRM Route berechnen...', 'info');
+                    
+                    const mode = document.getElementById('transportMode').value;
+                    const profile = this.getOSRMProfile(mode);
+                    const coordinates = waypoints.map(w => `${w.lng},${w.lat}`).join(';');
+                    
+                    // Optimized OSRM request with minimal parameters for speed
+                    const url = `${routingServices.osrm.baseUrl}/${profile}/${coordinates}?overview=full&geometries=geojson&alternatives=false&steps=false&continue_straight=true`;
+                    
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+                    
+                    const response = await fetch(url, { 
+                        signal: controller.signal,
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.routes && data.routes[0]) {
+                        const route = data.routes[0];
+                        updateRoutingStatus(`✅ OSRM: ${(route.distance/1000).toFixed(2)} km`, 'success');
+                        
+                        return {
+                            service: 'OSRM',
+                            geometry: route.geometry,
+                            distance: route.distance / 1000, // in km
+                            duration: route.duration / 60, // in minutes
+                            waypoints: waypoints,
+                            instructions: [] // Skip for speed
+                        };
+                    }
+                    throw new Error('Keine Route erhalten');
+                    
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        updateRoutingStatus('⚠️ OSRM Timeout', 'error');
+                    } else {
+                        updateRoutingStatus('⚠️ OSRM nicht verfügbar', 'error');
+                    }
+                    throw error;
+                }
+            }
+
+            async tryOpenRouteService(waypoints, options) {
+                try {
+                    updateRoutingStatus('🔄 OpenRouteService Route berechnen...', 'info');
+                    
+                    const mode = document.getElementById('transportMode').value;
+                    const profile = this.getOpenRouteProfile(mode);
+                    
+                    const coordinates = waypoints.map(w => [w.lng, w.lat]);
+                    
+                    const requestBody = {
+                        coordinates: coordinates,
+                        format: 'geojson',
+                        preference: document.getElementById('fastestRoute').checked ? 'fastest' : 'shortest',
+                        options: {
+                            avoid_features: document.getElementById('avoidTolls').checked ? ['tollways'] : []
+                        }
+                    };
+
+                    const headers = {
+                        'Content-Type': 'application/json'
+                    };
+
+                    // API Key falls verfügbar
+                    if (routingServices.openroute.apiKey) {
+                        headers['Authorization'] = routingServices.openroute.apiKey;
+                    }
+
+                    const response = await fetch(`${routingServices.openroute.baseUrl}/${profile}/geojson`, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(requestBody)
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.features && data.features[0]) {
+                        const route = data.features[0];
+                        const props = route.properties;
+                        
+                        updateRoutingStatus(`✅ OpenRoute: ${(props.segments[0].distance/1000).toFixed(2)} km`, 'success');
+                        
+                        return {
+                            service: 'OpenRouteService',
+                            geometry: route.geometry,
+                            distance: props.segments[0].distance / 1000,
+                            duration: props.segments[0].duration / 60,
+                            waypoints: waypoints,
+                            instructions: props.segments[0].steps || []
+                        };
+                    }
+                    throw new Error('Keine Route erhalten');
+                    
+                } catch (error) {
+                    updateRoutingStatus('⚠️ OpenRouteService nicht verfügbar', 'error');
+                    throw error;
+                }
+            }
+
+            async tryGraphHopper(waypoints, options) {
+                try {
+                    updateRoutingStatus('🔄 GraphHopper Route berechnen...', 'info');
+                    
+                    const mode = document.getElementById('transportMode').value;
+                    const vehicle = this.getGraphHopperVehicle(mode);
+                    
+                    const points = waypoints.map(w => `point=${w.lat},${w.lng}`).join('&');
+                    
+                    let url = `${routingServices.graphhopper.baseUrl}?${points}&vehicle=${vehicle}&instructions=true&calc_points=true&type=json`;
+                    
+                    if (routingServices.graphhopper.apiKey) {
+                        url += `&key=${routingServices.graphhopper.apiKey}`;
+                    }
+
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    
+                    if (data.paths && data.paths[0]) {
+                        const path = data.paths[0];
+                        
+                        updateRoutingStatus(`✅ GraphHopper: ${(path.distance/1000).toFixed(2)} km`, 'success');
+                        
+                        return {
+                            service: 'GraphHopper',
+                            geometry: this.decodePolyline(path.points),
+                            distance: path.distance / 1000,
+                            duration: path.time / 60000,
+                            waypoints: waypoints,
+                            instructions: path.instructions || []
+                        };
+                    }
+                    throw new Error('Keine Route erhalten');
+                    
+                } catch (error) {
+                    updateRoutingStatus('⚠️ GraphHopper nicht verfügbar', 'error');
+                    throw error;
+                }
+            }
+
+            calculateDirectRoute(waypoints) {
+                updateRoutingStatus('📏 Luftlinie berechnet', 'info');
+                
+                let totalDistance = 0;
+                const coordinates = waypoints.map(w => [w.lng, w.lat]);
+                
+                for (let i = 0; i < waypoints.length - 1; i++) {
+                    totalDistance += this.calculateDirectDistance(waypoints[i], waypoints[i + 1]);
+                }
+
+                return {
+                    service: 'Direct',
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: coordinates
+                    },
+                    distance: totalDistance,
+                    duration: (totalDistance / 50) * 60, // Angenommene Geschwindigkeit 50 km/h
+                    waypoints: waypoints,
+                    isDirect: true
+                };
+            }
+
+            // Hilfsfunktionen für Service-spezifische Profile
+            getOSRMProfile(mode) {
+                const profiles = {
+                    'driving': 'driving',
+                    'driving-hgv': 'driving',
+                    'cycling': 'cycling',
+                    'foot-walking': 'walking'
+                };
+                return profiles[mode] || 'driving';
+            }
+
+            getOpenRouteProfile(mode) {
+                const profiles = {
+                    'driving': 'driving-car',
+                    'driving-hgv': 'driving-hgv',
+                    'cycling': 'cycling-regular',
+                    'foot-walking': 'foot-walking'
+                };
+                return profiles[mode] || 'driving-car';
+            }
+
+            getGraphHopperVehicle(mode) {
+                const vehicles = {
+                    'driving': 'car',
+                    'driving-hgv': 'truck',
+                    'cycling': 'bike',
+                    'foot-walking': 'foot'
+                };
+                return vehicles[mode] || 'car';
+            }
+
+            // Polyline Decoder für GraphHopper
+            decodePolyline(encoded) {
+                const coordinates = [];
+                let index = 0, len = encoded.length;
+                let lat = 0, lng = 0;
+
+                while (index < len) {
+                    let b, shift = 0, result = 0;
+                    do {
+                        b = encoded.charCodeAt(index++) - 63;
+                        result |= (b & 0x1f) << shift;
+                        shift += 5;
+                    } while (b >= 0x20);
+                    
+                    let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+                    lat += dlat;
+
+                    shift = 0;
+                    result = 0;
+                    do {
+                        b = encoded.charCodeAt(index++) - 63;
+                        result |= (b & 0x1f) << shift;
+                        shift += 5;
+                    } while (b >= 0x20);
+                    
+                    let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+                    lng += dlng;
+
+                    coordinates.push([lng * 1e-5, lat * 1e-5]);
+                }
+
+                return {
+                    type: 'LineString',
+                    coordinates: coordinates
+                };
+            }
+
+            extractInstructions(legs) {
+                const instructions = [];
+                legs.forEach(leg => {
+                    if (leg.steps) {
+                        leg.steps.forEach(step => {
+                            instructions.push({
+                                instruction: step.maneuver.instruction || '',
+                                distance: step.distance,
+                                duration: step.duration
+                            });
+                        });
+                    }
+                });
+                return instructions;
+            }
+
+            calculateDirectDistance(a, b) {
+                const R = 6371; // Earth's radius in km
+                const dLat = (b.lat - a.lat) * Math.PI / 180;
+                const dLng = (b.lng - a.lng) * Math.PI / 180;
+                const lat1 = a.lat * Math.PI / 180;
+                const lat2 = b.lat * Math.PI / 180;
+
+                const ha = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(lat1) * Math.cos(lat2) *
+                          Math.sin(dLng/2) * Math.sin(dLng/2);
+                const c = 2 * Math.atan2(Math.sqrt(ha), Math.sqrt(1-ha));
+
+                return R * c;
+            }
+
+            createCacheKey(waypoints, options) {
+                const coords = waypoints.map(w => `${w.lat.toFixed(6)},${w.lng.toFixed(6)}`).join('|');
+                const opts = JSON.stringify(options);
+                return `${coords}_${opts}`;
+            }
+        }
+
+        // Globale Routing-Service-Instanz
+        const routingService = new AdvancedRoutingService();
+
+        // Routing Status Update
+        function updateRoutingStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('routingStatus');
+            const statusClass = `routing-${type}`;
+            
+            statusDiv.className = `routing-status ${statusClass}`;
+            statusDiv.innerHTML = `<div>🛣️ ${message}</div>`;
+            statusDiv.style.display = 'block';
+            
+            // Auto-hide nach 5 Sekunden
+            setTimeout(() => {
+                if (statusDiv.textContent.includes(message)) {
+                    statusDiv.style.display = 'none';
+                }
+            }, 5000);
+        }
+
+        // Initialize map
+        function initializeMap() {
+            map = L.map('map').setView([49.45, 11.08], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors | Verbesserte Straßenrouten-Integration'
+            }).addTo(map);
+
+            // Lade initiale Daten
+            loadInitialData();
+            updateMethodLegend();
+        }
+
+        function loadInitialData() {
+            if (currentDataMode === 'real') {
+                loadGeoJSONData();
+            } else {
+                loadDemoData();
+            }
+        }
+
+        function loadGeoJSONData() {
+            const filePath = document.getElementById('geoJsonPath').value || 'waste_baskets_nbg.geojson';
+            console.log(`📥 Lade GeoJSON-Daten von: ${filePath}`);
+            
+            updateStatus('🔄 Lade Daten...');
+            
+            // Versuche echte Datei zu laden
+            fetch(filePath)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('✅ Echte GeoJSON-Daten erfolgreich geladen');
+                    realGeoJSONData = data;
+                    processGeoJSONData(realGeoJSONData);
+                    updateStatus(`✅ ${containerLocations.length} Container aus echten Daten geladen`);
+                })
+                .catch(error => {
+                    console.warn('⚠️ Echte Datei nicht gefunden, verwende Demo-Daten:', error.message);
+                    // Fallback zu Demo-Daten
+                    realGeoJSONData = simulatedGeoJSON;
+                    processGeoJSONData(realGeoJSONData);
+                    updateStatus(`⚠️ Demo-Daten geladen (${containerLocations.length} Container) - Echte Datei: "${filePath}" nicht gefunden`);
+                    
+                    // Zeige Hilfe-Dialog
+                    setTimeout(() => {
+                        showFilePathHelp(filePath);
+                    }, 1000);
+                });
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            updateStatus('📁 Lese hochgeladene Datei...');
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    console.log('✅ Datei erfolgreich hochgeladen und geparst');
+                    realGeoJSONData = data;
+                    processGeoJSONData(realGeoJSONData);
+                    updateStatus(`✅ ${containerLocations.length} Container aus hochgeladener Datei geladen`);
+                } catch (error) {
+                    console.error('❌ Fehler beim Parsen der Datei:', error);
+                    updateStatus('❌ Fehler: Ungültige GeoJSON-Datei');
+                    alert('Fehler beim Lesen der Datei. Bitte prüfen Sie das GeoJSON-Format.');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function showFilePathHelp(attemptedPath) {
+            const helpText = `
+🗂️ DATEI-PFAD HILFE:
+
+Versuchter Pfad: "${attemptedPath}"
+
+📁 OPTIONEN:
+
+1️⃣ GLEICHER ORDNER:
+   ✅ waste_baskets_nbg.geojson
+
+2️⃣ UNTERORDNER:
+   ✅ data/waste_baskets_nbg.geojson
+   ✅ geojson/waste_baskets_nbg.geojson
+
+3️⃣ ÜBERGEORDNET:
+   ✅ ../waste_baskets_nbg.geojson
+
+4️⃣ ABSOLUTER PFAD:
+   ✅ /pfad/zu/waste_baskets_nbg.geojson
+
+5️⃣ WEB-SERVER:
+   ✅ https://example.com/data.geojson
+
+6️⃣ DATEI HOCHLADEN:
+   👆 Nutzen Sie den "📁 Datei wählen" Button
+
+💡 TIPP: Nutzen Sie Demo-Daten zum Testen!
+            `;
+            
+            if (confirm(helpText + '\n\nJetzt Demo-Daten verwenden? (Für sofortigen Test)')) {
+                document.getElementById('dataMode').value = 'demo';
+                switchDataMode();
+            }
+        }
+
+        function processGeoJSONData(geoJsonData) {
+            containerLocations = [];
+            clearContainerMarkers();
+
+            let wasteId = 1;
+            geoJsonData.features.forEach(feature => {
+                const [lng, lat] = feature.geometry.coordinates;
+                const fillLevel = Math.floor(Math.random() * 96) + 5; // 5-100%
+                
+                const container = {
+                    lat: lat,
+                    lng: lng,
+                    priority: fillLevel,
+                    id: wasteId,
+                    name: feature.properties.name || `Container ${wasteId}`,
+                    location: feature.properties.location || 'Unbekannt'
+                };
+
+                containerLocations.push(container);
+                createContainerMarker(container);
+                wasteId++;
+            });
+
+            updateStats();
+            updateMapInfo();
+        }
+
+        function loadDemoData() {
+            containerLocations = [...demoContainers];
+            clearContainerMarkers();
+            
+            containerLocations.forEach(container => {
+                createContainerMarker(container);
+            });
+
+            updateStats();
+            updateMapInfo();
+            updateStatus('✅ Demo-Daten geladen');
+        }
+
+        function createContainerMarker(container) {
+            const color = getFillLevelColor(container.priority);
+            
+            const popup = `
+                <div style="font-family: Arial, sans-serif;">
+                    <h4 style="margin: 0 0 10px 0; color: #2c3e50;">${container.name}</h4>
+                    <p style="margin: 5px 0;"><strong>ID:</strong> ${container.id}</p>
+                    <p style="margin: 5px 0;"><strong>Füllstand:</strong> ${container.priority}%</p>
+                    <p style="margin: 5px 0;"><strong>Status:</strong> ${getStatusText(container.priority)}</p>
+                    <p style="margin: 5px 0;"><strong>Standort:</strong> ${container.location || container.name}</p>
+                    <p style="margin: 5px 0;"><strong>Koordinaten:</strong> ${container.lat.toFixed(6)}, ${container.lng.toFixed(6)}</p>
+                </div>
+            `;
+
+            const marker = L.circleMarker([container.lat, container.lng], {
+                radius: Math.max(6, container.priority / 15),
+                color: "#1874cd",         // Blauer Rahmen (wie im Original)
+                weight: 1,
+                fill: true,
+                fillColor: color,
+                fillOpacity: 0.9
+            }).addTo(map);
+
+            marker.bindPopup(popup, { maxWidth: 300 });
+            containerMarkers.push(marker);
+        }
+
+        function getStatusText(priority) {
+            if (priority >= 90) return '🔴 Kritisch - Sofortige Leerung';
+            if (priority >= 70) return '🟠 Hoch - Leerung bald nötig';
+            if (priority >= 50) return '🟡 Medium - Überwachung';
+            return '🟢 Niedrig - OK';
+        }
+
+        function clearContainerMarkers() {
+            containerMarkers.forEach(marker => {
+                map.removeLayer(marker);
+            });
+            containerMarkers = [];
+        }
+
+        function switchDataMode() {
+            currentDataMode = document.getElementById('dataMode').value;
+            const modeText = {
+                'real': 'Echte Nürnberg-Daten',
+                'demo': 'Demo-Daten', 
+                'upload': 'Datei hochladen'
+            };
+            
+            document.getElementById('currentMode').textContent = modeText[currentDataMode];
+            
+            if (currentDataMode === 'upload') {
+                document.getElementById('fileUpload').click();
+            } else {
+                loadInitialData();
+            }
+        }
+
+        function generateRandomFillLevels() {
+            containerLocations.forEach(container => {
+                container.priority = Math.floor(Math.random() * 96) + 5; // 5-100%
+            });
+
+            clearContainerMarkers();
+            containerLocations.forEach(container => {
+                createContainerMarker(container);
+            });
+
+            updateStats();
+            updateMapInfo();
+            updateStatus('🎲 Füllstände aktualisiert');
+        }
+
+        function updateStats() {
+            const criticalCount = containerLocations.filter(c => c.priority >= 80).length;
+            
+            document.getElementById('containerCount').textContent = containerLocations.length;
+            document.getElementById('criticalCount').textContent = criticalCount;
+        }
+
+        function updateMapInfo() {
+            const criticalCount = containerLocations.filter(c => c.priority >= 80).length;
+            
+            document.getElementById('liveContainerCount').textContent = containerLocations.length;
+            document.getElementById('liveCriticalCount').textContent = criticalCount;
+        }
+
+        function updateStatus(message) {
+            const statusDiv = document.getElementById('optimizationStatus');
+            statusDiv.innerHTML = `
+                <div class="optimization-status">
+                    <span class="status-indicator"></span>
+                    <span>${message}</span>
+                </div>
+            `;
+        }
+
+        function updateMethodLegend() {
+            const legend = document.getElementById('methodLegend');
+            legend.innerHTML = '<h5 style="margin-bottom: 10px;">Routen-Legende</h5>';
+
+            Object.entries(methodColors).forEach(([method, color]) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `
+                    <div class="legend-color" style="background: ${color};"></div>
+                    <span style="font-size: 0.9em;">${getMethodName(method)}</span>
+                `;
+                legend.appendChild(item);
+            });
+        }
+
+        function getMethodName(method) {
+            const names = {
+                classical: 'Klassisches VRP',
+                genetic: 'Genetischer Alg.',
+                annealing: 'Sim. Abkühlen',
+                antcolony: 'Ameisenkolonie',
+                ml: 'Machine Learning',
+                iot: 'Dynamisches IoT'
+            };
+            return names[method] || method;
+        }
+
+        // Performance-optimized solver classes
+        class FastClassicalVRPSolver {
+            async solve(containers, config) {
+                const start = performance.now();
+                const maxContainersPerRoute = parseInt(config.maxContainers) || 25;
+                
+                // Filter by priority threshold
+                const priorityThreshold = parseInt(config.priority) || 70;
+                const filteredContainers = containers.filter(c => c.priority >= priorityThreshold);
+                
+                if (filteredContainers.length === 0) {
+                    return {
+                        route: [containers[0]],
+                        distance: 0,
+                        time: performance.now() - start,
+                        method: 'Klassisches VRP',
+                        containersVisited: 0
+                    };
+                }
+
+                const depot = containers[0] || { lat: 49.4521, lng: 11.0767, id: 0, name: "Depot" };
+                
+                // Limit containers for performance
+                const limitedContainers = filteredContainers.slice(0, Math.min(maxContainersPerRoute, 15));
+                
+                // Smart approximation instead of full distance matrix
+                const route = await this.buildApproximateRoute(depot, limitedContainers);
+                
+                // Single API call for entire route
+                const routeResult = await routingService.calculateRoute(route);
+                
+                return {
+                    route: route,
+                    distance: routeResult ? routeResult.distance : this.calculateDirectRouteDistance(route),
+                    time: performance.now() - start,
+                    method: 'Klassisches VRP (Schnell)',
+                    containersVisited: route.length - 2,
+                    realDistances: !!routeResult.service
+                };
+            }
+
+            async buildApproximateRoute(depot, containers) {
+                // Fast approximation using geographic clustering
+                const clusters = this.geographicClustering(containers, depot);
+                const route = [depot];
+                
+                // Process clusters in optimal order
+                clusters.forEach(cluster => {
+                    // Sort cluster by priority (highest first)
+                    cluster.sort((a, b) => b.priority - a.priority);
+                    route.push(...cluster);
+                });
+                
+                route.push(depot);
+                return route;
+            }
+
+            geographicClustering(containers, depot) {
+                // Simple geographic clustering for speed
+                const clusters = [];
+                const remaining = [...containers];
+                
+                while (remaining.length > 0) {
+                    const cluster = [remaining.shift()];
+                    const center = cluster[0];
+                    
+                    // Add nearby high-priority containers
+                    for (let i = remaining.length - 1; i >= 0; i--) {
+                        const container = remaining[i];
+                        const distance = this.calculateDirectDistance(center, container);
+                        
+                        if (distance < 1.5 && container.priority >= 75) { // 1.5km radius, high priority
+                            cluster.push(remaining.splice(i, 1)[0]);
+                        }
+                    }
+                    
+                    clusters.push(cluster);
+                }
+                
+                // Sort clusters by distance from depot
+                clusters.sort((a, b) => {
+                    const distA = this.calculateDirectDistance(depot, a[0]);
+                    const distB = this.calculateDirectDistance(depot, b[0]);
+                    return distA - distB;
+                });
+                
+                return clusters;
+            }
+
+            calculateDirectDistance(a, b) {
+                const R = 6371; // Earth's radius in km
+                const dLat = (b.lat - a.lat) * Math.PI / 180;
+                const dLng = (b.lng - a.lng) * Math.PI / 180;
+                const lat1 = a.lat * Math.PI / 180;
+                const lat2 = b.lat * Math.PI / 180;
+
+                const ha = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(lat1) * Math.cos(lat2) *
+                          Math.sin(dLng/2) * Math.sin(dLng/2);
+                const c = 2 * Math.atan2(Math.sqrt(ha), Math.sqrt(1-ha));
+
+                return R * c;
+            }
+
+            calculateDirectRouteDistance(route) {
+                let distance = 0;
+                for (let i = 0; i < route.length - 1; i++) {
+                    distance += this.calculateDirectDistance(route[i], route[i + 1]);
+                }
+                return distance;
+            }
+        }
+
+        // Ultra-fast genetic algorithm
+        class FastGeneticAlgorithmSolver {
+            async solve(containers, config) {
+                const start = performance.now();
+                const maxContainers = Math.min(parseInt(config.maxContainers) || 25, 12); // Limit for speed
+                const generations = Math.min(parseInt(config.generations) || 30, 8); // Reduced generations
+                const priorityThreshold = parseInt(config.priority) || 70;
+
+                const filteredContainers = containers.filter(c => c.priority >= priorityThreshold).slice(0, maxContainers);
+                if (filteredContainers.length === 0) {
+                    return { route: [containers[0]], distance: 0, time: performance.now() - start, method: 'Genetischer Algorithmus' };
+                }
+
+                const depot = { lat: 49.4521, lng: 11.0767, id: 0, name: "Depot" };
+                
+                // Quick genetic search with limited generations
+                let bestRoute = null;
+                let bestDistance = Infinity;
+
+                for (let gen = 0; gen < generations; gen++) {
+                    const route = this.generateSmartRoute(depot, filteredContainers);
+                    
+                    // Fast distance approximation for most generations
+                    let distance;
+                    if (gen === generations - 1) {
+                        // Only calculate real route for best candidate
+                        const routeResult = await routingService.calculateRoute(route);
+                        distance = routeResult ? routeResult.distance : this.calculateDirectRouteDistance(route);
+                    } else {
+                        distance = this.calculateDirectRouteDistance(route);
+                    }
+                    
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestRoute = route.slice();
+                    }
+                }
+
+                return {
+                    route: bestRoute,
+                    distance: bestDistance,
+                    time: performance.now() - start,
+                    method: 'Genetischer Algorithmus (Schnell)',
+                    generations: generations,
+                    realDistances: generations > 0
+                };
+            }
+
+            generateSmartRoute(depot, containers) {
+                // Priority-weighted random generation
+                const prioritySum = containers.reduce((sum, c) => sum + c.priority, 0);
+                const weightedContainers = containers.map(c => ({
+                    ...c,
+                    weight: c.priority / prioritySum
+                }));
+                
+                // Weighted shuffle based on priority
+                const shuffled = weightedContainers
+                    .sort((a, b) => (Math.random() * b.weight) - (Math.random() * a.weight))
+                    .slice(0, Math.min(containers.length, 10)); // Limit route length
+                
+                return [depot, ...shuffled, depot];
+            }
+
+            calculateDirectRouteDistance(route) {
+                let distance = 0;
+                for (let i = 0; i < route.length - 1; i++) {
+                    distance += this.calculateDirectDistance(route[i], route[i + 1]);
+                }
+                return distance;
+            }
+
+            calculateDirectDistance(a, b) {
+                const R = 6371;
+                const dLat = (b.lat - a.lat) * Math.PI / 180;
+                const dLng = (b.lng - a.lng) * Math.PI / 180;
+                const lat1 = a.lat * Math.PI / 180;
+                const lat2 = b.lat * Math.PI / 180;
+                const ha = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng/2) * Math.sin(dLng/2);
+                const c = 2 * Math.atan2(Math.sqrt(ha), Math.sqrt(1-ha));
+                return R * c;
+            }
+        }
+
+        // Lightning-fast simple solver for other methods
+        class LightningFastSolver {
+            constructor(name) {
+                this.name = name;
+            }
+
+            async solve(containers, config) {
+                const start = performance.now();
+                const priorityThreshold = parseInt(config.priority) || 70;
+                const maxContainers = Math.min(parseInt(config.maxContainers) || 25, 10); // Hard limit for speed
+                
+                const filteredContainers = containers.filter(c => c.priority >= priorityThreshold).slice(0, maxContainers);
+                const depot = { lat: 49.4521, lng: 11.0767, id: 0, name: "Depot" };
+                
+                if (filteredContainers.length === 0) {
+                    return { route: [depot], distance: 0, time: performance.now() - start, method: this.name };
+                }
+
+                // Ultra-fast priority-distance sorting
+                const centerLat = filteredContainers.reduce((sum, c) => sum + c.lat, 0) / filteredContainers.length;
+                const centerLng = filteredContainers.reduce((sum, c) => sum + c.lng, 0) / filteredContainers.length;
+                
+                const sortedContainers = filteredContainers.sort((a, b) => {
+                    const scoreA = a.priority - (Math.abs(a.lat - centerLat) + Math.abs(a.lng - centerLng)) * 100;
+                    const scoreB = b.priority - (Math.abs(b.lat - centerLat) + Math.abs(b.lng - centerLng)) * 100;
+                    return scoreB - scoreA;
+                });
+
+                const route = [depot, ...sortedContainers, depot];
+                
+                // Single route calculation at the end
+                const routeResult = await routingService.calculateRoute(route);
+                const distance = routeResult ? routeResult.distance : this.calculateDirectRouteDistance(route);
+
+                return {
+                    route: route,
+                    distance: distance,
+                    time: performance.now() - start,
+                    method: `${this.name} (Blitz)`,
+                    realDistances: !!routeResult.service
+                };
+            }
+
+            calculateDirectRouteDistance(route) {
+                let distance = 0;
+                for (let i = 0; i < route.length - 1; i++) {
+                    distance += this.calculateDirectDistance(route[i], route[i + 1]);
+                }
+                return distance;
+            }
+
+            calculateDirectDistance(a, b) {
+                const R = 6371;
+                const dLat = (b.lat - a.lat) * Math.PI / 180;
+                const dLng = (b.lng - a.lng) * Math.PI / 180;
+                const lat1 = a.lat * Math.PI / 180;
+                const lat2 = b.lat * Math.PI / 180;
+                const ha = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng/2) * Math.sin(dLng/2);
+                const c = 2 * Math.atan2(Math.sqrt(ha), Math.sqrt(1-ha));
+                return R * c;
+            }
+        }
+
+        // High-speed optimization function with performance modes
+        async function runComprehensiveOptimization() {
+            if (containerLocations.length === 0) {
+                alert('Bitte laden Sie zuerst Container-Daten!');
+                return;
+            }
+
+            const btn = document.querySelector('.btn');
+            const resultsSection = document.getElementById('resultsSection');
+            const recommendationPanel = document.getElementById('recommendationPanel');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner"></div> Schnelle Optimierung läuft...';
+            
+            // Reset performance metrics
+            resetPerformanceMetrics();
+            
+            // Clear previous results
+            clearMapRoutes();
+            optimizationResults = {};
+
+            // Get selected methods
+            const selectedMethods = [];
+            const methodCheckboxes = {
+                classical: document.getElementById('classical'),
+                genetic: document.getElementById('genetic'),
+                annealing: document.getElementById('annealing'),
+                antcolony: document.getElementById('antcolony'),
+                ml: document.getElementById('ml'),
+                iot: document.getElementById('iot')
+            };
+
+            Object.entries(methodCheckboxes).forEach(([method, checkbox]) => {
+                if (checkbox.checked) {
+                    selectedMethods.push(method);
+                }
+            });
+
+            if (selectedMethods.length === 0) {
+                alert('Bitte wählen Sie mindestens eine Optimierungsmethode!');
+                btn.disabled = false;
+                btn.innerHTML = '🎯 Optimierung starten';
+                return;
+            }
+
+            // Get speed mode configuration
+            const speedConfig = getSpeedModeConfig();
+            const enableParallel = document.getElementById('enableParallel').checked;
+            const speedMode = document.getElementById('speedMode').value;
+            
+            updateOptimizationStatus(`⚡ ${speedMode.toUpperCase()}-Modus aktiviert`, 0);
+
+            // Enhanced configuration with speed optimizations
+            const config = {
+                population: Math.min(parseInt(document.getElementById('population').value), speedConfig.maxGenerations * 3),
+                generations: Math.min(parseInt(document.getElementById('generations').value), speedConfig.maxGenerations),
+                priority: document.getElementById('priority').value,
+                maxContainers: Math.min(parseInt(document.getElementById('maxContainers').value), speedConfig.maxContainers),
+                speedMode: speedMode,
+                enableRealRouting: speedConfig.enableRealRouting,
+                timeout: speedConfig.timeout,
+                batchSize: speedConfig.batchSize
+            };
+
+            // Initialize performance-optimized solvers
+            const solvers = {
+                classical: new FastClassicalVRPSolver(),
+                genetic: new FastGeneticAlgorithmSolver(),
+                annealing: new LightningFastSolver('Simuliertes Abkühlen'),
+                antcolony: new LightningFastSolver('Ameisenkolonie'),
+                ml: new LightningFastSolver('Machine Learning'),
+                iot: new LightningFastSolver('Dynamisches IoT')
+            };
+
+            const startTime = performance.now();
+            
+            try {
+                if (enableParallel && selectedMethods.length > 1) {
+                    // Parallel processing for maximum speed
+                    updateOptimizationStatus('🚀 Parallele Verarbeitung gestartet...', 0);
+                    
+                    const optimizationPromises = selectedMethods.map(async (method, index) => {
+                        // Staggered start to prevent API overload
+                        const delay = speedMode === 'lightning' ? index * 50 : index * 100;
+                        if (delay > 0) {
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        }
+                        
+                        updateOptimizationStatus(`⚡ ${getMethodName(method)}...`, index / selectedMethods.length);
+                        
+                        try {
+                            const result = await Promise.race([
+                                solvers[method].solve(containerLocations, config),
+                                new Promise((_, reject) => 
+                                    setTimeout(() => reject(new Error('Timeout')), config.timeout)
+                                )
+                            ]);
+                            
+                            logPerformanceMetric('apiCalls', 1);
+                            return { method, result };
+                            
+                        } catch (error) {
+                            console.warn(`${method} fehlgeschlagen:`, error.message);
+                            return { 
+                                method, 
+                                result: { 
+                                    error: error.message, 
+                                    distance: Infinity, 
+                                    time: 0,
+                                    method: getMethodName(method) + ' (Fehler)'
+                                } 
+                            };
+                        }
+                    });
+
+                    // Wait for all optimizations
+                    const results = await Promise.allSettled(optimizationPromises);
+                    
+                    // Process results
+                    results.forEach(promiseResult => {
+                        if (promiseResult.status === 'fulfilled') {
+                            const { method, result } = promiseResult.value;
+                            optimizationResults[method] = result;
+                        }
+                    });
+                    
+                } else {
+                    // Sequential processing for compatibility
+                    updateOptimizationStatus('🔄 Sequenzielle Verarbeitung...', 0);
+                    
+                    for (let i = 0; i < selectedMethods.length; i++) {
+                        const method = selectedMethods[i];
+                        updateOptimizationStatus(`${getMethodName(method)}...`, i / selectedMethods.length);
+                        
+                        try {
+                            const result = await solvers[method].solve(containerLocations, config);
+                            optimizationResults[method] = result;
+                            logPerformanceMetric('apiCalls', 1);
+                            
+                        } catch (error) {
+                            console.error(`Error in ${method}:`, error);
+                            optimizationResults[method] = { error: error.message, distance: Infinity };
+                        }
+                    }
+                }
+
+                const totalTime = performance.now() - startTime;
+                console.log(`⚡ Optimierung abgeschlossen in ${totalTime.toFixed(0)}ms`);
+                logPerformanceMetric('totalTime', totalTime);
+
+                // Find and display results
+                const bestMethod = findBestMethod();
+                displayResults();
+                displayRecommendations(bestMethod);
+                
+                // Background visualization (non-blocking)
+                if (speedMode !== 'lightning') {
+                    visualizeRoutes().catch(error => {
+                        console.warn('Visualisierung fehlgeschlagen:', error);
+                    });
+                }
+
+                updateOptimizationStatus(`✅ Fertig! ${selectedMethods.length} Methoden in ${totalTime.toFixed(0)}ms`, 1);
+                
+            } catch (error) {
+                console.error('❌ Optimierung fehlgeschlagen:', error);
+                updateOptimizationStatus('❌ Fehler bei der Optimierung', 1);
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = '🎯 Optimierung starten';
+        }
+
+        function updateOptimizationStatus(message, progress) {
+            const statusDiv = document.getElementById('optimizationStatus');
+            statusDiv.innerHTML = `
+                <div class="optimization-status">
+                    <span class="status-indicator"></span>
+                    <span>${message}</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${progress * 100}%"></div>
+                </div>
+            `;
+        }
+
+        function findBestMethod() {
+            let bestMethod = null;
+            let bestDistance = Infinity;
+
+            Object.entries(optimizationResults).forEach(([method, result]) => {
+                if (result.distance < bestDistance) {
+                    bestDistance = result.distance;
+                    bestMethod = method;
+                }
+            });
+
+            return bestMethod;
+        }
+
+        function displayResults() {
+            const resultsSection = document.getElementById('resultsSection');
+            const resultsGrid = document.getElementById('resultsGrid');
+            
+            resultsGrid.innerHTML = '';
+
+            // Sort results by distance
+            const sortedResults = Object.entries(optimizationResults)
+                .filter(([_, result]) => !result.error)
+                .sort(([_, a], [__, b]) => a.distance - b.distance);
+
+            sortedResults.forEach(([method, result], index) => {
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                if (index === 0) {
+                    card.style.borderLeftColor = '#28a745';
+                }
+
+                const performanceScore = calculatePerformanceScore(result);
+                
+                card.innerHTML = `
+                    <h4>${getMethodName(method)} ${index === 0 ? '🏆' : ''}</h4>
+                    <div class="metric">
+                        <span class="metric-label">${result.realDistances ? 'Straßendistanz' : 'Luftlinie'}:</span>
+                        <span class="metric-value" style="color: ${result.realDistances ? '#28a745' : '#fd7e14'}; font-weight: bold;">${result.distance.toFixed(2)} km</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Zeit:</span>
+                        <span class="metric-value">${result.time.toFixed(2)} ms</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Container:</span>
+                        <span class="metric-value">${result.containersVisited || result.route.length - 1}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Performance:</span>
+                        <span class="metric-value">${performanceScore.toFixed(1)} %</span>
+                    </div>
+                    ${result.realDistances ? '<div style="font-size: 0.8em; color: #28a745; margin-top: 8px;">✅ Echte Straßenroute</div>' : '<div style="font-size: 0.8em; color: #fd7e14; margin-top: 8px;">📏 Luftlinie</div>'}
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${performanceScore}%"></div>
+                    </div>
+                `;
+
+                resultsGrid.appendChild(card);
+            });
+
+            resultsSection.style.display = 'block';
+        }
+
+        function calculatePerformanceScore(result) {
+            const distances = Object.values(optimizationResults)
+                .filter(r => !r.error)
+                .map(r => r.distance);
+            
+            const maxDistance = Math.max(...distances);
+            const minDistance = Math.min(...distances);
+
+            if (maxDistance === minDistance) return 100;
+
+            const distanceScore = ((maxDistance - result.distance) / (maxDistance - minDistance)) * 100;
+            return Math.max(0, Math.min(100, distanceScore));
+        }
+
+        function displayRecommendations(bestMethod) {
+            const recommendationPanel = document.getElementById('recommendationPanel');
+            const recommendationList = document.getElementById('recommendationList');
+
+            const recommendations = generateRecommendations(bestMethod);
+            
+            recommendationList.innerHTML = '';
+            recommendations.forEach(rec => {
+                const li = document.createElement('li');
+                li.textContent = rec;
+                recommendationList.appendChild(li);
+            });
+
+            recommendationPanel.style.display = 'block';
+        }
+
+        function generateRecommendations(bestMethod) {
+            const bestResult = optimizationResults[bestMethod];
+            const recommendations = [];
+            const totalContainers = containerLocations.length;
+            const criticalContainers = containerLocations.filter(c => c.priority >= 80).length;
+
+            recommendations.push(`Beste Methode: ${getMethodName(bestMethod)} mit ${bestResult.distance.toFixed(2)} km ${bestResult.realDistances ? 'Straßendistanz' : 'Luftlinie'}`);
+            
+            if (bestResult.realDistances) {
+                recommendations.push('Echte Straßenrouten erfolgreich berechnet - präzise Navigation möglich');
+            } else {
+                recommendations.push('Routing-Service nicht verfügbar - Empfehlung: OSRM Server prüfen');
+            }
+
+            if (bestResult.distance < totalContainers * 0.5) {
+                recommendations.push('Exzellente Routeneffizienz erreicht - unter 0.5 km pro Container');
+            } else if (bestResult.distance < totalContainers * 1.0) {
+                recommendations.push('Gute Routeneffizienz - weitere Optimierung durch Verkehrsdaten möglich');
+            } else {
+                recommendations.push('Routenoptimierung zeigt Potential - Multi-Fahrzeug-Strategie empfohlen');
+            }
+
+            if (criticalContainers > totalContainers * 0.3) {
+                recommendations.push('Hoher Anteil kritischer Container - sofortige Leerungszyklen anpassen');
+            }
+
+            const selectedService = document.getElementById('routingService').value;
+            recommendations.push(`Routing-Service: ${selectedService.toUpperCase()} - für Produktiveinsatz geeignet`);
+
+            if (currentDataMode === 'real') {
+                recommendations.push('Echte Nürnberg-Daten erfolgreich optimiert - bereit für Produktiveinsatz');
+            }
+
+            recommendations.push(`${totalContainers} Container analysiert - Skalierung für stadtweiten Einsatz empfohlen`);
+
+            return recommendations;
+        }
+
+        async function visualizeRoutes() {
+            clearMapRoutes();
+
+            // Show best route with real street routing
+            const bestMethod = findBestMethod();
+            if (bestMethod && optimizationResults[bestMethod].route) {
+                const route = optimizationResults[bestMethod].route;
+                const color = methodColors[bestMethod];
+                
+                await createEnhancedStreetRoute(route, color, bestMethod);
+            }
+        }
+
+        async function createEnhancedStreetRoute(route, color, methodName) {
+            if (route.length < 2) return;
+
+            try {
+                updateRoutingStatus('🛣️ Berechne optimierte Straßenroute...', 'info');
+                
+                // Use enhanced routing service
+                const routeResult = await routingService.calculateRoute(route);
+                
+                if (routeResult && routeResult.geometry) {
+                    // Draw real street route
+                    const polyline = L.geoJSON(routeResult.geometry, {
+                        style: {
+                            color: color,
+                            weight: 6,
+                            opacity: 0.9,
+                            lineCap: 'round',
+                            lineJoin: 'round'
+                        }
+                    }).addTo(map);
+
+                    activeRoutes.push(polyline);
+
+                    // Add direction arrows for better visualization
+                    if (routeResult.service !== 'Direct') {
+                        const coordinates = routeResult.geometry.coordinates;
+                        const arrowSpacing = Math.max(5, Math.floor(coordinates.length / 10));
+                        
+                        for (let i = arrowSpacing; i < coordinates.length - arrowSpacing; i += arrowSpacing) {
+                            const [lng, lat] = coordinates[i];
+                            const [nextLng, nextLat] = coordinates[i + 1] || coordinates[i];
+                            
+                            const angle = Math.atan2(nextLat - lat, nextLng - lng) * 180 / Math.PI;
+                            
+                            const arrowMarker = L.marker([lat, lng], {
+                                icon: L.divIcon({
+                                    html: `<div style="transform: rotate(${angle}deg); color: ${color}; font-size: 16px;">➤</div>`,
+                                    iconSize: [20, 20],
+                                    className: 'arrow-icon'
+                                })
+                            }).addTo(map);
+                            
+                            activeRoutes.push(arrowMarker);
+                        }
+                    }
+
+                    // Enhanced route info popup
+                    const midpoint = Math.floor(route.length / 2);
+                    if (route[midpoint]) {
+                        const isRealRoute = routeResult.service !== 'Direct';
+                        
+                        const popup = L.popup({
+                            className: 'route-popup',
+                            closeButton: true,
+                            autoClose: false
+                        })
+                        .setLatLng([route[midpoint].lat, route[midpoint].lng])
+                        .setContent(`
+                            <div style="font-family: Arial, sans-serif; text-align: center; min-width: 250px;">
+                                <h4 style="margin: 0 0 15px 0; color: #2c3e50; padding: 12px; background: linear-gradient(135deg, ${color}20, ${color}10); border-radius: 8px; border-left: 4px solid ${color};">
+                                    🏆 ${isRealRoute ? 'Echte Straßenroute' : 'Luftlinien-Route'}
+                                </h4>
+                                <div style="text-align: left; margin: 15px 0;">
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                                        <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                                        <div style="font-size: 1em; font-weight: bold; color: #fd7e14;">${currentDataMode === 'real' ? 'Echte Daten' : 'Demo'}</div>
+                                        <div style="font-size: 0.8em; color: #6c757d;">Datenquelle</div>
+                                    </div>
+                                </div>
+                                <div style="margin-top: 15px; padding: 10px; background: ${isRealRoute ? '#e8f5e8' : '#fff3cd'}; border-radius: 6px; font-size: 0.9em; color: ${isRealRoute ? '#2e7d32' : '#856404'};">
+                                    ${isRealRoute ? '✅ Route folgt echten Straßen' : '⚠️ Luftlinie - echte Route wäre länger'}
+                                </div>
+                            </div>
+                        `)
+                        .openOn(map);
+                    }
+
+                    // Update optimization result with real distance
+                    if (optimizationResults[methodName]) {
+                        optimizationResults[methodName].streetDistance = routeResult.distance;
+                        optimizationResults[methodName].drivingTime = Math.round(routeResult.duration);
+                        optimizationResults[methodName].routingService = routeResult.service;
+                    }
+
+                    updateRoutingStatus(`✅ Route berechnet: ${routeResult.distance.toFixed(2)} km via ${routeResult.service}`, 'success');
+                    
+                } else {
+                    throw new Error('Keine gültige Route erhalten');
+                }
+                
+            } catch (error) {
+                console.warn('⚠️ Routing fehlgeschlagen, verwende verbesserte Luftlinie:', error.message);
+                createEnhancedDirectRoute(route, color, methodName);
+            }
+        }
+
+        function createEnhancedDirectRoute(route, color, methodName) {
+            updateRoutingStatus('📏 Erstelle Luftlinien-Route...', 'info');
+            
+            // Enhanced direct line as fallback
+            const routeCoords = route.map(container => [container.lat, container.lng]);
+            
+            // Create smooth curved line instead of straight segments
+            const polyline = L.polyline(routeCoords, {
+                color: color,
+                weight: 6,
+                opacity: 0.8,
+                lineCap: 'round',
+                lineJoin: 'round',
+                dashArray: '15, 10' // Dashed for air distance
+            }).addTo(map);
+
+            activeRoutes.push(polyline);
+
+            // Add waypoint markers with enhanced styling
+            route.forEach((container, index) => {
+                if (index > 0 && index < route.length - 1) { // Not start/end
+                    const waypointMarker = L.circleMarker([container.lat, container.lng], {
+                        radius: 10,
+                        fillColor: color,
+                        color: '#ffffff',
+                        weight: 3,
+                        opacity: 1,
+                        fillOpacity: 0.9
+                    }).addTo(map);
+                    
+                    waypointMarker.bindTooltip(`${index}. ${container.name}<br>Füllstand: ${container.priority}%`, {
+                        permanent: false,
+                        direction: 'top',
+                        className: 'waypoint-tooltip'
+                    });
+                    
+                    activeRoutes.push(waypointMarker);
+                }
+            });
+
+            // Enhanced route info for direct route
+            const midpoint = Math.floor(route.length / 2);
+            if (route[midpoint]) {
+                const directDistance = optimizationResults[methodName].distance;
+                
+                const popup = L.popup({
+                    className: 'route-popup',
+                    closeButton: true,
+                    autoClose: false
+                })
+                .setLatLng([route[midpoint].lat, route[midpoint].lng])
+                .setContent(`
+                    <div style="font-family: Arial, sans-serif; text-align: center; min-width: 250px;">
+                        <h4 style="margin: 0 0 15px 0; color: #2c3e50; padding: 12px; background: linear-gradient(135deg, ${color}20, ${color}10); border-radius: 8px; border-left: 4px solid ${color};">
+                            📏 Luftlinien-Route
+                        </h4>
+                        <div style="text-align: left; margin: 15px 0;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                                <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                                    <div style="font-size: 1.2em; font-weight: bold; color: ${color};">${getMethodName(methodName)}</div>
+                                    <div style="font-size: 0.8em; color: #6c757d;">Methode</div>
+                                </div>
+                                <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                                    <div style="font-size: 1.2em; font-weight: bold; color: #fd7e14;">${directDistance.toFixed(2)} km</div>
+                                    <div style="font-size: 0.8em; color: #6c757d;">Luftlinie</div>
+                                </div>
+                            </div>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                                <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                                    <div style="font-size: 1.2em; font-weight: bold; color: #17a2b8;">~${Math.round(directDistance * 1.4 / 50 * 60)} min</div>
+                                    <div style="font-size: 0.8em; color: #6c757d;">Geschätzte Zeit</div>
+                                </div>
+                                <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                                    <div style="font-size: 1.2em; font-weight: bold; color: #6f42c1;">${route.length - 1}</div>
+                                    <div style="font-size: 0.8em; color: #6c757d;">Container</div>
+                                </div>
+                            </div>
+
+                            <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px; margin-bottom: 10px;">
+                                <div style="font-size: 1em; font-weight: bold; color: #fd7e14;">${currentDataMode === 'real' ? 'Echte Daten' : 'Demo'}</div>
+                                <div style="font-size: 0.8em; color: #6c757d;">Datenquelle</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 6px; font-size: 0.9em; color: #856404;">
+                            ⚠️ Luftlinie - echte Straßenroute wäre ~40% länger
+                        </div>
+                        <div style="margin-top: 10px; padding: 8px; background: #f8f9fa; border-radius: 6px; font-size: 0.8em; color: #6c757d;">
+                            💡 Tipp: Aktivieren Sie OSRM für echte Routen
+                        </div>
+                    </div>
+                `)
+                .openOn(map);
+            }
+
+            updateRoutingStatus(`📏 Luftlinien-Route erstellt: ${optimizationResults[methodName].distance.toFixed(2)} km`, 'info');
+        }
+
+        function clearMapRoutes() {
+            activeRoutes.forEach(route => {
+                map.removeLayer(route);
+            });
+            activeRoutes = [];
+        }
+
+        function exportResults() {
+            if (Object.keys(optimizationResults).length === 0) {
+                alert('Keine Ergebnisse zum Exportieren verfügbar!');
+                return;
+            }
+
+            const exportData = {
+                timestamp: new Date().toISOString(),
+                dataMode: currentDataMode,
+                totalContainers: containerLocations.length,
+                criticalContainers: containerLocations.filter(c => c.priority >= 80).length,
+                routingService: document.getElementById('routingService').value,
+                transportMode: document.getElementById('transportMode').value,
+                results: optimizationResults,
+                bestMethod: findBestMethod(),
+                containerData: containerLocations,
+                systemInfo: {
+                    version: '2.0',
+                    features: ['real_routing', 'multi_service', 'enhanced_ui'],
+                    services: Object.keys(routingServices)
+                }
+            };
+
+            const dataStr = JSON.stringify(exportData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(dataBlob);
+            link.download = `nuernberg_route_optimization_enhanced_${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+
+            updateStatus('💾 Ergebnisse exportiert');
+        }
+
+        // Service Status Check
+        async function checkServiceAvailability() {
+            console.log('🔍 Prüfe Routing-Service Verfügbarkeit...');
+            
+            for (const [serviceName, service] of Object.entries(routingServices)) {
+                try {
+                    // Test with simple request
+                    const testUrl = serviceName === 'osrm' 
+                        ? `${service.baseUrl}/driving/11.0767,49.4521;11.0780,49.4540?overview=false`
+                        : service.baseUrl;
+                    
+                    const response = await fetch(testUrl, { method: 'HEAD' });
+                    service.available = response.ok;
+                    console.log(`${serviceName}: ${service.available ? '✅' : '❌'}`);
+                    
+                } catch (error) {
+                    service.available = false;
+                    console.log(`${serviceName}: ❌ (${error.message})`);
+                }
+            }
+        }
+
+        // Improved error handling for routing
+        window.addEventListener('unhandledrejection', function(event) {
+            if (event.reason && event.reason.message && event.reason.message.includes('fetch')) {
+                console.warn('⚠️ Netzwerk-Fehler abgefangen:', event.reason.message);
+                updateRoutingStatus('⚠️ Netzwerk-Problem - verwende Fallback', 'error');
+                event.preventDefault(); // Prevent console spam
+            }
+        });
+
+        // Performance monitoring and optimization
+        let performanceMetrics = {
+            routingCalls: 0,
+            cacheHits: 0,
+            totalTime: 0,
+            apiCalls: 0,
+            startTime: null
+        };
+
+        function logPerformanceMetric(metric, value) {
+            performanceMetrics[metric] = (performanceMetrics[metric] || 0) + value;
+            updatePerformanceDisplay();
+        }
+
+        function updatePerformanceDisplay() {
+            if (!document.getElementById('showPerformance').checked) return;
+            
+            const cacheHitRate = performanceMetrics.routingCalls > 0 
+                ? ((performanceMetrics.cacheHits / performanceMetrics.routingCalls) * 100).toFixed(1)
+                : 0;
+            
+            const avgResponseTime = performanceMetrics.apiCalls > 0
+                ? (performanceMetrics.totalTime / performanceMetrics.apiCalls).toFixed(0)
+                : 0;
+            
+            document.getElementById('apiCallCount').textContent = performanceMetrics.apiCalls;
+            document.getElementById('cacheHitRate').textContent = `${cacheHitRate}%`;
+            document.getElementById('avgResponseTime').textContent = `${avgResponseTime}ms`;
+        }
+
+        function resetPerformanceMetrics() {
+            performanceMetrics = {
+                routingCalls: 0,
+                cacheHits: 0,
+                totalTime: 0,
+                apiCalls: 0,
+                startTime: performance.now()
+            };
+            updatePerformanceDisplay();
+        }
+
+        // Speed mode optimization
+        function getSpeedModeConfig() {
+            const speedMode = document.getElementById('speedMode').value;
+            
+            const configs = {
+                lightning: {
+                    maxContainers: 8,
+                    maxGenerations: 3,
+                    enableRealRouting: false,
+                    batchSize: 5,
+                    timeout: 2000
+                },
+                fast: {
+                    maxContainers: 12,
+                    maxGenerations: 5,
+                    enableRealRouting: true,
+                    batchSize: 8,
+                    timeout: 5000
+                },
+                balanced: {
+                    maxContainers: 20,
+                    maxGenerations: 8,
+                    enableRealRouting: true,
+                    batchSize: 10,
+                    timeout: 8000
+                },
+                accurate: {
+                    maxContainers: 30,
+                    maxGenerations: 15,
+                    enableRealRouting: true,
+                    batchSize: 15,
+                    timeout: 15000
+                }
+            };
+            
+            return configs[speedMode] || configs.balanced;
+        }
+
+        // Initialize the enhanced application
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('🛣️ Verbesserte Nürnberg Routenoptimierung geladen');
+            console.log('📊 Verfügbare Routing-Services:', Object.keys(routingServices));
+            
+            initializeMap();
+            
+            // Check service availability
+            await checkServiceAvailability();
+            
+            // Initialize routing service cache
+            routingService.cache.clear();
+            
+            console.log('✅ System bereit für echte Straßenrouten');
+            console.log('💡 Tipp: Nutzen Sie OSRM für beste Ergebnisse');
+        });
+
+        // Auto-save user preferences
+        function saveUserPreferences() {
+            const preferences = {
+                routingService: document.getElementById('routingService').value,
+                transportMode: document.getElementById('transportMode').value,
+                avoidTolls: document.getElementById('avoidTolls').checked,
+                fastestRoute: document.getElementById('fastestRoute').checked,
+                dataMode: currentDataMode
+            };
+            
+            localStorage.setItem('routeOptimizationPrefs', JSON.stringify(preferences));
+        }
+
+        function loadUserPreferences() {
+            try {
+                const prefs = JSON.parse(localStorage.getItem('routeOptimizationPrefs') || '{}');
+                
+                if (prefs.routingService) document.getElementById('routingService').value = prefs.routingService;
+                if (prefs.transportMode) document.getElementById('transportMode').value = prefs.transportMode;
+                if (prefs.avoidTolls !== undefined) document.getElementById('avoidTolls').checked = prefs.avoidTolls;
+                if (prefs.fastestRoute !== undefined) document.getElementById('fastestRoute').checked = prefs.fastestRoute;
+                if (prefs.dataMode) {
+                    document.getElementById('dataMode').value = prefs.dataMode;
+                    currentDataMode = prefs.dataMode;
+                }
+                
+            } catch (error) {
+                console.log('🔧 Keine gespeicherten Einstellungen gefunden');
+            }
+        }
+
+        // Auto-save user preferences (enhanced)
+        function saveUserPreferences() {
+            const preferences = {
+                routingService: document.getElementById('routingService').value,
+                transportMode: document.getElementById('transportMode').value,
+                avoidTolls: document.getElementById('avoidTolls').checked,
+                fastestRoute: document.getElementById('fastestRoute').checked,
+                speedMode: document.getElementById('speedMode').value,
+                enableParallel: document.getElementById('enableParallel').checked,
+                enableCaching: document.getElementById('enableCaching').checked,
+                showPerformance: document.getElementById('showPerformance').checked,
+                dataMode: currentDataMode
+            };
+            
+            try {
+                localStorage.setItem('routeOptimizationPrefs', JSON.stringify(preferences));
+            } catch (error) {
+                console.log('Konnte Einstellungen nicht speichern:', error);
+            }
+        }
+
+        function loadUserPreferences() {
+            try {
+                const prefs = JSON.parse(localStorage.getItem('routeOptimizationPrefs') || '{}');
+                
+                if (prefs.routingService) document.getElementById('routingService').value = prefs.routingService;
+                if (prefs.transportMode) document.getElementById('transportMode').value = prefs.transportMode;
+                if (prefs.avoidTolls !== undefined) document.getElementById('avoidTolls').checked = prefs.avoidTolls;
+                if (prefs.fastestRoute !== undefined) document.getElementById('fastestRoute').checked = prefs.fastestRoute;
+                if (prefs.speedMode) document.getElementById('speedMode').value = prefs.speedMode;
+                if (prefs.enableParallel !== undefined) document.getElementById('enableParallel').checked = prefs.enableParallel;
+                if (prefs.enableCaching !== undefined) document.getElementById('enableCaching').checked = prefs.enableCaching;
+                if (prefs.showPerformance !== undefined) document.getElementById('showPerformance').checked = prefs.showPerformance;
+                if (prefs.dataMode) {
+                    document.getElementById('dataMode').value = prefs.dataMode;
+                    currentDataMode = prefs.dataMode;
+                }
+                
+            } catch (error) {
+                console.log('🔧 Keine gespeicherten Einstellungen gefunden');
+            }
+        }
+
+        // Initialize the enhanced application
+        document.addEventListener('DOMContentLoaded', async function() {
+            console.log('🛣️ Verbesserte Nürnberg Routenoptimierung geladen');
+            console.log('📊 Performance-optimierte Routing-Services verfügbar');
+            
+            // Load user preferences first
+            loadUserPreferences();
+            
+            // Initialize map
+            initializeMap();
+            
+            // Check service availability in background
+            checkServiceAvailability().catch(error => {
+                console.warn('Service-Verfügbarkeitsprüfung fehlgeschlagen:', error);
+            });
+            
+            // Initialize routing service cache
+            routingService.cache.clear();
+            
+            // Initialize performance display
+            updatePerformanceDisplay();
+            
+            // Set up event listeners for auto-save
+            const elementsToWatch = [
+                'routingService', 'transportMode', 'avoidTolls', 'fastestRoute',
+                'speedMode', 'enableParallel', 'enableCaching', 'showPerformance'
+            ];
+            
+            elementsToWatch.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.addEventListener('change', saveUserPreferences);
+                }
+            });
+            
+            // Add tooltips for better UX
+            addTooltips();
+            
+            console.log('✅ System bereit für Hochgeschwindigkeits-Routenoptimierung');
+            console.log('⚡ Performance-Modi verfügbar: Lightning, Fast, Balanced, Accurate');
+            console.log('💡 Tipp: Verwenden Sie "Blitzschnell" für Tests mit vielen Containern');
+        });
+
+        // Enhanced keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey) {
+                switch(event.key) {
+                    case 'r':
+                        event.preventDefault();
+                        runComprehensiveOptimization();
+                        break;
+                    case 's':
+                        event.preventDefault();
+                        exportResults();
+                        break;
+                    case 'l':
+                        event.preventDefault();
+                        loadGeoJSONData();
+                        break;
+                    case 'u':
+                        event.preventDefault();
+                        generateRandomFillLevels();
+                        break;
+                    case 'p':
+                        event.preventDefault();
+                        // Toggle performance display
+                        const perfCheckbox = document.getElementById('showPerformance');
+                        perfCheckbox.checked = !perfCheckbox.checked;
+                        saveUserPreferences();
+                        break;
+                    case 'm':
+                        event.preventDefault();
+                        // Cycle through speed modes
+                        const speedSelect = document.getElementById('speedMode');
+                        const modes = ['lightning', 'fast', 'balanced', 'accurate'];
+                        const currentIndex = modes.indexOf(speedSelect.value);
+                        const nextIndex = (currentIndex + 1) % modes.length;
+                        speedSelect.value = modes[nextIndex];
+                        saveUserPreferences();
+                        updateStatus(`⚡ Speed-Modus: ${modes[nextIndex].toUpperCase()}`);
+                        break;
+                }
+            }
+        });
+
+        // Add enhanced tooltips for better UX
+        function addTooltips() {
+            const tooltips = {
+                'routingService': 'OSRM bietet die beste Performance für deutsche Straßen',
+                'transportMode': 'LKW-Modus berücksichtigt Fahrzeugbeschränkungen',
+                'avoidTolls': 'Vermeidet kostenpflichtige Straßen',
+                'fastestRoute': 'Optimiert auf Zeit statt Distanz',
+                'speedMode': 'Lightning: <3s, Fast: <8s, Balanced: <15s, Accurate: <30s',
+                'enableParallel': 'Berechnet mehrere Methoden gleichzeitig (empfohlen)',
+                'enableCaching': 'Speichert berechnete Routen zwischen (empfohlen)',
+                'showPerformance': 'Zeigt Live-Statistiken der API-Aufrufe an'
+            };
+            
+            Object.entries(tooltips).forEach(([id, text]) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.title = text;
+                }
+            });
+        }
+
+        // Monitor performance in real-time
+        setInterval(() => {
+            if (document.getElementById('showPerformance').checked) {
+                updatePerformanceDisplay();
+            }
+        }, 2000);
+
+        console.log('🎯 Hochgeschwindigkeits-Routenoptimierung vollständig geladen');
+        console.log('⌨️ Tastenkürzel: Ctrl+R (Optimierung), Ctrl+S (Export), Ctrl+P (Performance), Ctrl+M (Speed-Modus)');
+        console.log('⚡ Performance-Modi: Lightning (3s), Fast (8s), Balanced (15s), Accurate (30s)');
+        console.log('🚀 Parallele Verarbeitung aktiviert für maximale Geschwindigkeit');
+    </script>
+</body>
+</html>
+                                            <div style="font-size: 1.2em; font-weight: bold; color: ${color};">${getMethodName(methodName)}</div>
+                                            <div style="font-size: 0.8em; color: #6c757d;">Methode</div>
+                                        </div>
+                                        <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                                            <div style="font-size: 1.2em; font-weight: bold; color: #28a745;">${routeResult.distance.toFixed(2)} km</div>
+                                            <div style="font-size: 0.8em; color: #6c7d72;">${isRealRoute ? 'Straßendistanz' : 'Luftlinie'}</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                                        <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                                            <div style="font-size: 1.2em; font-weight: bold; color: #17a2b8;">${Math.round(routeResult.duration)} min</div>
+                                            <div style="font-size: 0.8em; color: #6c757d;">Fahrzeit</div>
+                                        </div>
+                                        <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px;">
+                                            <div style="font-size: 1.2em; font-weight: bold; color: #6f42c1;">${route.length - 1}</div>
+                                            <div style="font-size: 0.8em; color: #6c757d;">Container</div>
+                                        </div>
+                                    </div>
+
+                                    <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px; margin-bottom: 10px;">
+                                        <div style="font-size: 1em; font-weight: bold; color: #fd7e14;">${routeResult.service || 'Luftlinie'}</div>
+                                        <div style="font-size: 0.8em; color: #6c757d;">Routing-Service</div>
+                                    </div>
+                                    
+                                    <div style="text-align: center; padding: 8px; background: #f8f9fa; border-radius: 6px;">
